@@ -97,6 +97,9 @@ app.use("/api/vendor/apartment", require("./routes/Apartment.routes"));
 app.use("/api/vacation-house", vacationHouseRoutes);
 app.use("/api/palaces", palaceRoutes);
 app.use("/api/motel-vendors", motelVendorRoutes);
+const homestayUnitRoutes = require("./routes/homestayUnit.routes");
+
+app.use("/api/homestay-units", homestayUnitRoutes);
 const campsiteRoutes = require("./routes/vendorCampsite.routes");
 
 app.use("/api/vendor/campsite", campsiteRoutes);
