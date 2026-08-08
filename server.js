@@ -65,7 +65,13 @@ app.use("/api/vendor/auth", require("./routes/auth.routes"));
 
 // HOTELS
 app.use("/api/vendor/hotels", require("./routes/hotel.routes"));
+const hotelRoomRoutes = require("./routes/HotelRoom.routes");
+app.use("/api/hotel-rooms", hotelRoomRoutes);
 app.use("/api/hotel-booking", hotelBookingRoutes);
+const hotelInventoryRoutes = require("./routes/HotelInventory.routes");
+
+app.use("/api/hotel-inventory", hotelInventoryRoutes);
+
 
 // CABS
 app.use("/api/vendor/cabs", require("./routes/cab.routes"));
@@ -106,6 +112,14 @@ app.use(
   "/api/homestay-inventory",
   homestayInventoryRoutes
 );
+const homestayBookingRoutes = require("./routes/homestayBooking.routes");
+app.use(
+  "/api/homestay-bookings",
+  homestayBookingRoutes
+);
+const homestayReviewRoutes = require("./routes/homestayReview.routes");
+app.use("/api/homestay-reviews", homestayReviewRoutes);
+
 const campsiteRoutes = require("./routes/vendorCampsite.routes");
 
 app.use("/api/vendor/campsite", campsiteRoutes);

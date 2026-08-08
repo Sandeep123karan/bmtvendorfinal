@@ -1,575 +1,1438 @@
-
+const mongoose = require("mongoose");
 
 const Hotel = require("../models/Hotel.model");
+const HotelRoom = require("../models/HotelRoom.model");
+const HotelInventory = require("../models/HotelInventory.model");
 const HotelBooking = require("../models/HotelBooking.model");
-const mongoose = require("mongoose");
-const cloudinary = require("../config/cloudinary");
-const generateBookingId = async () => {
-  const lastBooking = await HotelBooking.findOne()
-    .sort({ createdAt: -1 })
-    .select("bookingId");
 
-  if (!lastBooking || !lastBooking.bookingId) {
-    return "HB000001";
-  }
+/* =========================================================
+   HELPER
+========================================================= */
 
-  const lastNumber = parseInt(
-    lastBooking.bookingId.replace("HB", "")
+const getVendorId = (req) => {
+  return (
+    req.vendor?._id ||
+    req.vendor?.id ||
+    req.user?.vendorId ||
+    req.user?._id
+  );
+};
+
+
+const isValidObjectId = (id) => {
+  return mongoose.Types.ObjectId.isValid(id);
+};
+
+
+const startOfDay = (date) => {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
+
+/* =========================================================
+   GENERATE BOOKING NUMBER
+========================================================= */
+
+const generateBookingNumber = () => {
+  const timestamp = Date.now();
+
+  const random = Math.floor(
+    1000 + Math.random() * 9000
   );
 
-  return `HB${String(lastNumber + 1).padStart(6, "0")}`;
+  return `HTL-${timestamp}-${random}`;
 };
-exports.bookHotel = async (req, res) => {
-  const session = await mongoose.startSession();
+
+
+/* =========================================================
+   CALCULATE NIGHTS
+========================================================= */
+
+const calculateNights = (
+  checkIn,
+  checkOut
+) => {
+
+  const start = startOfDay(checkIn);
+  const end = startOfDay(checkOut);
+
+  const difference =
+    end.getTime() - start.getTime();
+
+  return Math.ceil(
+    difference / (1000 * 60 * 60 * 24)
+  );
+};
+
+
+/* =========================================================
+   CREATE HOTEL BOOKING
+   POST /api/hotel-booking
+========================================================= */
+
+exports.createBooking = async (
+  req,
+  res
+) => {
+
+  const session =
+    await mongoose.startSession();
 
   try {
 
     session.startTransaction();
 
     const {
-
       hotelId,
-
       roomId,
 
-      checkIn,
+      guest,
 
+      checkIn,
       checkOut,
 
-      roomsBooked,
+      roomsBooked = 1,
 
-      adults,
+      extraGuestAmount = 0,
+      mealAmount = 0,
 
-      children,
+      discountAmount = 0,
+      couponDiscount = 0,
 
-      guestName,
+      couponCode = "",
 
-      guestPhone,
+      paymentMethod = "PAY_AT_HOTEL",
 
-      guestEmail,
+      commissionPercentage = 0,
 
-      specialRequest,
-
-      guests,
-
-      paymentMethod,
-
+      source = "VENDOR",
     } = req.body;
 
-    if (!hotelId)
-      return res.status(400).json({
+
+    /* =====================================================
+       AUTH
+    ===================================================== */
+
+    const vendorId = getVendorId(req);
+
+    if (!vendorId) {
+
+      await session.abortTransaction();
+
+      return res.status(401).json({
         success: false,
-        message: "Hotel is required",
+        message:
+          "Vendor authentication required.",
       });
-
-    if (!roomId)
-      return res.status(400).json({
-        success: false,
-        message: "Room is required",
-      });
-
-    if (!checkIn || !checkOut)
-      return res.status(400).json({
-        success: false,
-        message: "Check In & Check Out required",
-      });
-
-    const today = new Date();
-
-    today.setHours(0,0,0,0);
-
-    const checkInDate = new Date(checkIn);
-
-    const checkOutDate = new Date(checkOut);
-
-    if(checkInDate < today){
-
-      return res.status(400).json({
-
-        success:false,
-
-        message:"Check In date cannot be past"
-
-      });
-
     }
 
-    if(checkOutDate <= checkInDate){
+
+    /* =====================================================
+       REQUIRED FIELDS
+    ===================================================== */
+
+    if (
+      !hotelId ||
+      !roomId ||
+      !checkIn ||
+      !checkOut
+    ) {
+
+      await session.abortTransaction();
 
       return res.status(400).json({
-
-        success:false,
-
-        message:"Invalid Check Out"
-
+        success: false,
+        message:
+          "hotelId, roomId, checkIn and checkOut are required.",
       });
-
     }
 
-    const totalNights = Math.ceil(
 
-      (checkOutDate-checkInDate)/(1000*60*60*24)
+    if (
+      !isValidObjectId(hotelId) ||
+      !isValidObjectId(roomId)
+    ) {
 
-    );
+      await session.abortTransaction();
 
-    const hotel = await Hotel.findById(hotelId).session(session);
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid hotelId or roomId.",
+      });
+    }
 
-    if(!hotel){
+
+    /* =====================================================
+       GUEST VALIDATION
+    ===================================================== */
+
+    if (
+      !guest ||
+      !guest.name ||
+      !guest.email ||
+      !guest.phone
+    ) {
+
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        success: false,
+        message:
+          "Guest name, email and phone are required.",
+      });
+    }
+
+
+    if (
+      !guest.adults ||
+      Number(guest.adults) < 1
+    ) {
+
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        success: false,
+        message:
+          "At least one adult is required.",
+      });
+    }
+
+
+    /* =====================================================
+       VALIDATE DATES
+    ===================================================== */
+
+    const checkInDate =
+      startOfDay(checkIn);
+
+    const checkOutDate =
+      startOfDay(checkOut);
+
+
+    if (
+      isNaN(checkInDate.getTime()) ||
+      isNaN(checkOutDate.getTime())
+    ) {
+
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        success: false,
+        message: "Invalid check-in/check-out date.",
+      });
+    }
+
+
+    if (
+      checkOutDate <= checkInDate
+    ) {
+
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        success: false,
+        message:
+          "Check-out must be after check-in.",
+      });
+    }
+
+
+    const nights =
+      calculateNights(
+        checkInDate,
+        checkOutDate
+      );
+
+
+    /* =====================================================
+       ROOMS BOOKED VALIDATION
+    ===================================================== */
+
+    if (
+      Number(roomsBooked) < 1
+    ) {
+
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        success: false,
+        message:
+          "At least one room must be booked.",
+      });
+    }
+
+
+    /* =====================================================
+       GET HOTEL
+    ===================================================== */
+
+    const hotel =
+      await Hotel.findOne({
+        _id: hotelId,
+        vendor: vendorId,
+      }).session(session);
+
+
+    if (!hotel) {
+
+      await session.abortTransaction();
 
       return res.status(404).json({
-
-        success:false,
-
-        message:"Hotel not found"
-
+        success: false,
+        message:
+          "Hotel not found or unauthorized.",
       });
-
     }
 
-    const room = hotel.rooms.id(roomId);
 
-    if(!room){
+    /* =====================================================
+       GET ROOM
+    ===================================================== */
+
+    const room =
+      await HotelRoom.findOne({
+        _id: roomId,
+        hotel: hotelId,
+        vendor: vendorId,
+        isActive: true,
+      }).session(session);
+
+
+    if (!room) {
+
+      await session.abortTransaction();
 
       return res.status(404).json({
-
-        success:false,
-
-        message:"Room not found"
-
+        success: false,
+        message:
+          "Room not found or inactive.",
       });
-
     }
-        /* ==========================
-       Room Availability
-    =========================== */
 
-    if (room.status === "soldout") {
+
+    /* =====================================================
+       CHECK MIN/MAX STAY
+    ===================================================== */
+
+    if (
+      room.minimumStay &&
+      nights < room.minimumStay
+    ) {
+
       await session.abortTransaction();
-      session.endSession();
 
       return res.status(400).json({
         success: false,
-        message: "Room is sold out",
+        message:
+          `Minimum stay is ${room.minimumStay} night(s).`,
       });
     }
 
-    if (room.availableRooms < Number(roomsBooked || 1)) {
+
+    if (
+      room.maximumStay &&
+      nights > room.maximumStay
+    ) {
+
       await session.abortTransaction();
-      session.endSession();
 
       return res.status(400).json({
         success: false,
-        message: `Only ${room.availableRooms} room(s) available`,
+        message:
+          `Maximum stay is ${room.maximumStay} night(s).`,
       });
     }
 
-    /* ==========================
-       Upload Guest ID Proof
-    =========================== */
 
-    let guestList = [];
+    /* =====================================================
+       CHECK GUEST CAPACITY
+    ===================================================== */
 
-    if (guests) {
-      try {
-        guestList =
-          typeof guests === "string"
-            ? JSON.parse(guests)
-            : guests;
-      } catch (err) {
+    const adults =
+      Number(guest.adults || 0);
+
+    const children =
+      Number(guest.children || 0);
+
+    const totalGuests =
+      adults + children;
+
+
+    if (
+      room.maxGuests &&
+      totalGuests > room.maxGuests
+    ) {
+
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        success: false,
+        message:
+          `Maximum ${room.maxGuests} guests allowed for this room.`,
+      });
+    }
+
+
+    /* =====================================================
+       CHECK INVENTORY FOR EVERY NIGHT
+    ===================================================== */
+
+    const inventories = [];
+
+    let currentDate =
+      new Date(checkInDate);
+
+
+    while (
+      currentDate < checkOutDate
+    ) {
+
+      const inventory =
+        await HotelInventory.findOne({
+          hotel: hotelId,
+          room: roomId,
+          vendor: vendorId,
+          date: currentDate,
+        }).session(session);
+
+
+      if (!inventory) {
+
         await session.abortTransaction();
-        session.endSession();
 
         return res.status(400).json({
           success: false,
-          message: "Invalid guests data",
+          message:
+            `Inventory not available for ${currentDate.toISOString().split("T")[0]}.`,
         });
       }
-    }
 
-    if (
-      req.files &&
-      req.files.idProofFront &&
-      req.files.idProofFront.length
-    ) {
-      for (let i = 0; i < guestList.length; i++) {
-        const front = req.files.idProofFront[i];
 
-        if (front) {
-          const upload = await cloudinary.uploader.upload(
-            front.path,
-            {
-              folder: "hotel-booking/id-proof/front",
-            }
-          );
+      if (
+        !inventory.isActive ||
+        inventory.stopSell ||
+        inventory.status !== "OPEN"
+      ) {
 
-          guestList[i].idProofFront = upload.secure_url;
-        }
+        await session.abortTransaction();
+
+        return res.status(400).json({
+          success: false,
+          message:
+            `Room is not available for ${currentDate.toISOString().split("T")[0]}.`,
+        });
       }
-    }
 
-    if (
-      req.files &&
-      req.files.idProofBack &&
-      req.files.idProofBack.length
-    ) {
-      for (let i = 0; i < guestList.length; i++) {
-        const back = req.files.idProofBack[i];
 
-        if (back) {
-          const upload = await cloudinary.uploader.upload(
-            back.path,
-            {
-              folder: "hotel-booking/id-proof/back",
-            }
-          );
+      if (
+        inventory.availableRooms <
+        Number(roomsBooked)
+      ) {
 
-          guestList[i].idProofBack = upload.secure_url;
-        }
+        await session.abortTransaction();
+
+        return res.status(400).json({
+          success: false,
+          message:
+            `Only ${inventory.availableRooms} room(s) available on ${currentDate.toISOString().split("T")[0]}.`,
+        });
       }
+
+
+      inventories.push(inventory);
+
+      currentDate.setDate(
+        currentDate.getDate() + 1
+      );
     }
 
-    /* ==========================
-       Price Calculation
-    =========================== */
 
-    const pricePerNight =
-      room.offerPrice && room.offerPrice > 0
-        ? room.offerPrice
-        : room.basePrice;
+    /* =====================================================
+       PRICE CALCULATION
+    ===================================================== */
 
-    const roomPrice =
-      pricePerNight *
-      totalNights *
-      Number(roomsBooked || 1);
+    let roomAmount = 0;
 
-    const tax =
-      room.tax
-        ? (roomPrice * room.tax) / 100
-        : 0;
+    let totalTaxAmount = 0;
 
-    const serviceCharge =
-      room.serviceCharge || 0;
+    let totalServiceCharge = 0;
 
-    const discount = 0;
+
+    for (
+      const inventory of inventories
+    ) {
+
+      const price =
+        Number(
+          inventory.offerPrice ||
+          inventory.basePrice ||
+          0
+        );
+
+
+      const nightlyRoomAmount =
+        price *
+        Number(roomsBooked);
+
+
+      const nightlyTax =
+        nightlyRoomAmount *
+        (
+          Number(
+            inventory.taxPercentage || 0
+          ) / 100
+        );
+
+
+      const nightlyServiceCharge =
+        nightlyRoomAmount *
+        (
+          Number(
+            inventory.serviceChargePercentage || 0
+          ) / 100
+        );
+
+
+      roomAmount +=
+        nightlyRoomAmount;
+
+      totalTaxAmount +=
+        nightlyTax;
+
+      totalServiceCharge +=
+        nightlyServiceCharge;
+    }
+
+
+    /* =====================================================
+       EXTRA CHARGES
+    ===================================================== */
+
+    const safeExtraGuestAmount =
+      Number(extraGuestAmount || 0);
+
+    const safeMealAmount =
+      Number(mealAmount || 0);
+
+    const safeDiscountAmount =
+      Number(discountAmount || 0);
+
+    const safeCouponDiscount =
+      Number(couponDiscount || 0);
+
+
+    const subtotal =
+      roomAmount +
+      safeExtraGuestAmount +
+      safeMealAmount;
+
+
+    const totalDiscount =
+      safeDiscountAmount +
+      safeCouponDiscount;
+
 
     const totalAmount =
-      roomPrice +
-      tax +
-      serviceCharge -
-      discount;
+      Math.max(
+        subtotal +
+        totalTaxAmount +
+        totalServiceCharge -
+        totalDiscount,
+        0
+      );
 
-    /* ==========================
-       Booking ID
-    =========================== */
 
-    const bookingId =
-      await generateBookingId();
+    /* =====================================================
+       COMMISSION
+    ===================================================== */
 
-    /* ==========================
-       Reduce Room Inventory
-    =========================== */
+    const safeCommissionPercentage =
+      Number(
+        commissionPercentage || 0
+      );
 
-    room.availableRooms =
-      room.availableRooms -
-      Number(roomsBooked || 1);
-          /* ==========================
-       Create Booking
-    =========================== */
 
-    const booking = await HotelBooking.create(
-      [
+    const adminCommission =
+      totalAmount *
+      (
+        safeCommissionPercentage / 100
+      );
+
+
+    const vendorAmount =
+      Math.max(
+        totalAmount -
+        adminCommission,
+        0
+      );
+
+
+    /* =====================================================
+       PAYMENT STATUS
+    ===================================================== */
+
+    let paymentStatus =
+      "PENDING";
+
+
+    if (
+      paymentMethod ===
+        "PAY_AT_HOTEL" ||
+      paymentMethod === "CASH"
+    ) {
+
+      paymentStatus =
+        "PENDING";
+    }
+
+
+    /* =====================================================
+       CREATE BOOKING
+    ===================================================== */
+
+    const bookingNumber =
+      generateBookingNumber();
+
+
+    const booking =
+      await HotelBooking.create(
+        [
+          {
+            hotel: hotelId,
+
+            room: roomId,
+
+            vendor: vendorId,
+
+            bookingNumber,
+
+            guest: {
+              name: guest.name,
+              email: guest.email,
+              phone: guest.phone,
+              alternatePhone:
+                guest.alternatePhone || "",
+              adults,
+              children,
+              specialRequest:
+                guest.specialRequest || "",
+            },
+
+            checkIn: checkInDate,
+
+            checkOut: checkOutDate,
+
+            nights,
+
+            roomsBooked:
+              Number(roomsBooked),
+
+            roomName:
+              room.roomName || "",
+
+            roomType:
+              room.roomType || "",
+
+            pricePerNight:
+              Number(
+                room.offerPrice ||
+                room.basePrice ||
+                0
+              ),
+
+            roomAmount,
+
+            extraGuestAmount:
+              safeExtraGuestAmount,
+
+            mealAmount:
+              safeMealAmount,
+
+            taxAmount:
+              totalTaxAmount,
+
+            serviceCharge:
+              totalServiceCharge,
+
+            discountAmount:
+              safeDiscountAmount,
+
+            couponDiscount:
+              safeCouponDiscount,
+
+            couponCode,
+
+            totalAmount,
+
+            paymentMethod,
+
+            paymentStatus,
+
+            bookingStatus:
+              "CONFIRMED",
+
+            commissionPercentage:
+              safeCommissionPercentage,
+
+            adminCommission,
+
+            vendorAmount,
+
+            settlementStatus:
+              "PENDING",
+
+            source,
+
+            isActive: true,
+          },
+        ],
         {
-          bookingId,
+          session,
+        }
+      );
 
-          user: req.user._id,
 
-          vendor: hotel.vendor,
+    const createdBooking =
+      booking[0];
 
-          hotel: hotel._id,
 
-          roomId: room._id,
+    /* =====================================================
+       UPDATE INVENTORY
+    ===================================================== */
 
-          hotelName: hotel.hotelName,
+    for (
+      const inventory of inventories
+    ) {
 
-          roomName: room.roomName,
+      inventory.bookedRooms +=
+        Number(roomsBooked);
 
-          roomType: room.roomType,
 
-          hotelAddress: hotel.address,
+      inventory.availableRooms =
+        Math.max(
+          inventory.totalRooms -
+          inventory.bookedRooms -
+          inventory.blockedRooms,
+          0
+        );
 
-          hotelCity: hotel.city,
 
-          hotelState: hotel.state,
+      await inventory.save({
+        session,
+      });
+    }
 
-          hotelImage:
-            hotel.hotelImages &&
-            hotel.hotelImages.length
-              ? hotel.hotelImages[0]
-              : "",
 
-          checkIn: checkInDate,
-
-          checkOut: checkOutDate,
-
-          totalNights,
-
-          roomsBooked: Number(
-            roomsBooked || 1
-          ),
-
-          adults: Number(adults || 1),
-
-          children: Number(children || 0),
-
-          guestName,
-
-          guestPhone,
-
-          guestEmail,
-
-          specialRequest,
-
-          guests: guestList,
-
-          pricePerNight,
-
-          roomPrice,
-
-          tax,
-
-          serviceCharge,
-
-          discount,
-
-          totalAmount,
-
-          paymentMethod:
-            paymentMethod || "ONLINE",
-
-          paymentStatus: "PENDING",
-
-          bookingStatus: "PENDING",
-        },
-      ],
-      { session }
-    );
-
-    /* ==========================
-       Save Hotel Inventory
-    =========================== */
-
-    await hotel.save({ session });
-
-    /* ==========================
-       Commit Transaction
-    =========================== */
+    /* =====================================================
+       COMMIT
+    ===================================================== */
 
     await session.commitTransaction();
 
     session.endSession();
 
+
+    /* =====================================================
+       RESPONSE
+    ===================================================== */
+
     return res.status(201).json({
       success: true,
 
-      message: "Hotel booked successfully.",
+      message:
+        "Hotel booking created successfully.",
 
-      booking: booking[0],
+      booking: createdBooking,
     });
+
   } catch (error) {
-    await session.abortTransaction();
+
+    try {
+      await session.abortTransaction();
+    } catch (e) {}
 
     session.endSession();
 
-    console.error(error);
+    console.error(
+      "CREATE HOTEL BOOKING ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-
-      message: error.message,
-    });
-  }
-};
-/* ==========================================================
-   USER - GET MY BOOKINGS
-========================================================== */
-
-exports.getUserHotelBookings = async (req, res) => {
-  try {
-    const bookings = await HotelBooking.find({
-      user: req.user._id,
-    })
-      .populate({
-        path: "hotel",
-        select:
-          "hotelName hotelImages city state address starRating",
-      })
-      .populate({
-        path: "vendor",
-        select: "name shopName phone email",
-      })
-      .sort({ createdAt: -1 });
-
-    return res.status(200).json({
-      success: true,
-      totalBookings: bookings.length,
-      bookings,
-    });
-  } catch (error) {
-    console.error(error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message,
+      message:
+        "Failed to create hotel booking.",
+      error: error.message,
     });
   }
 };
 
 
-/* ==========================================================
-   USER - GET SINGLE BOOKING
-========================================================== */
+/* =========================================================
+   GET VENDOR BOOKINGS
+   GET /api/hotel-booking
+========================================================= */
 
-exports.getSingleBooking = async (req, res) => {
+exports.getVendorBookings = async (
+  req,
+  res
+) => {
+
   try {
-    const booking = await HotelBooking.findOne({
-      _id: req.params.bookingId,
-      user: req.user._id,
-    })
-      .populate({
-        path: "hotel",
-        select:
-          "hotelName hotelImages city state address phone email",
-      })
-      .populate({
-        path: "vendor",
-        select:
-          "name shopName phone email",
-      });
 
-    if (!booking) {
-      return res.status(404).json({
+    const vendorId =
+      getVendorId(req);
+
+
+    if (!vendorId) {
+
+      return res.status(401).json({
         success: false,
-        message: "Booking not found",
+        message:
+          "Vendor authentication required.",
       });
     }
+
+
+    const {
+      status,
+      paymentStatus,
+      hotelId,
+      page = 1,
+      limit = 20,
+    } = req.query;
+
+
+    const query = {
+      vendor: vendorId,
+    };
+
+
+    if (status) {
+      query.bookingStatus =
+        status.toUpperCase();
+    }
+
+
+    if (paymentStatus) {
+      query.paymentStatus =
+        paymentStatus.toUpperCase();
+    }
+
+
+    if (
+      hotelId &&
+      isValidObjectId(hotelId)
+    ) {
+
+      query.hotel =
+        hotelId;
+    }
+
+
+    const skip =
+      (
+        Number(page) - 1
+      ) *
+      Number(limit);
+
+
+    const [
+      bookings,
+      total,
+    ] =
+      await Promise.all([
+
+        HotelBooking.find(query)
+          .populate(
+            "hotel",
+            "hotelName city state"
+          )
+          .populate(
+            "room",
+            "roomName roomType"
+          )
+          .sort({
+            createdAt: -1,
+          })
+          .skip(skip)
+          .limit(
+            Number(limit)
+          ),
+
+        HotelBooking.countDocuments(
+          query
+        ),
+      ]);
+
+
+    return res.status(200).json({
+
+      success: true,
+
+      count:
+        bookings.length,
+
+      total,
+
+      page:
+        Number(page),
+
+      pages:
+        Math.ceil(
+          total /
+          Number(limit)
+        ),
+
+      bookings,
+    });
+
+  } catch (error) {
+
+    console.error(
+      "GET HOTEL BOOKINGS ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to fetch hotel bookings.",
+      error: error.message,
+    });
+  }
+};
+
+
+/* =========================================================
+   GET SINGLE BOOKING
+   GET /api/hotel-booking/:bookingId
+========================================================= */
+
+exports.getSingleBooking = async (
+  req,
+  res
+) => {
+
+  try {
+
+    const vendorId =
+      getVendorId(req);
+
+    const {
+      bookingId,
+    } = req.params;
+
+
+    if (
+      !isValidObjectId(
+        bookingId
+      )
+    ) {
+
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid booking ID.",
+      });
+    }
+
+
+    const booking =
+      await HotelBooking.findOne({
+        _id: bookingId,
+        vendor: vendorId,
+      })
+        .populate(
+          "hotel"
+        )
+        .populate(
+          "room"
+        );
+
+
+    if (!booking) {
+
+      return res.status(404).json({
+        success: false,
+        message:
+          "Booking not found.",
+      });
+    }
+
 
     return res.status(200).json({
       success: true,
       booking,
     });
-  } catch (error) {
-    console.error(error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};/* ==========================================================
-   VENDOR - GET ALL BOOKINGS
-========================================================== */
-
-exports.getVendorHotelBookings = async (req, res) => {
-  try {
-
-    const bookings = await HotelBooking.find({
-      vendor: req.vendor._id,
-    })
-      .populate({
-        path: "user",
-        select: "name email phone profileImage",
-      })
-      .populate({
-        path: "hotel",
-        select:
-          "hotelName hotelImages city state address",
-      })
-      .sort({ createdAt: -1 });
-
-    return res.status(200).json({
-      success: true,
-      totalBookings: bookings.length,
-      bookings,
-    });
 
   } catch (error) {
 
-    console.error(error);
-
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        "Failed to fetch booking.",
+      error: error.message,
     });
-
   }
 };
 
 
-/* ==========================================================
-   VENDOR - CONFIRM BOOKING
-========================================================== */
+/* =========================================================
+   CONFIRM BOOKING
+   PUT /api/hotel-booking/:bookingId/confirm
+========================================================= */
 
-exports.confirmBooking = async (req, res) => {
+exports.confirmBooking = async (
+  req,
+  res
+) => {
 
   try {
 
-    const booking = await HotelBooking.findOne({
-      _id: req.params.bookingId,
-      vendor: req.vendor._id,
-    });
+    const vendorId =
+      getVendorId(req);
+
+    const {
+      bookingId,
+    } = req.params;
+
+
+    const booking =
+      await HotelBooking.findOneAndUpdate(
+
+        {
+          _id: bookingId,
+          vendor: vendorId,
+          bookingStatus: "PENDING",
+        },
+
+        {
+          $set: {
+            bookingStatus:
+              "CONFIRMED",
+          },
+        },
+
+        {
+          new: true,
+        }
+      );
+
 
     if (!booking) {
 
       return res.status(404).json({
         success: false,
-        message: "Booking not found",
+        message:
+          "Pending booking not found.",
       });
-
     }
 
-    if (booking.bookingStatus === "CANCELLED") {
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Hotel booking confirmed successfully.",
+      booking,
+    });
+
+  } catch (error) {
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to confirm booking.",
+      error: error.message,
+    });
+  }
+};
+
+
+/* =========================================================
+   CANCEL BOOKING
+   PUT /api/hotel-booking/:bookingId/cancel
+========================================================= */
+
+exports.cancelBooking = async (
+  req,
+  res
+) => {
+
+  const session =
+    await mongoose.startSession();
+
+
+  try {
+
+    session.startTransaction();
+
+
+    const vendorId =
+      getVendorId(req);
+
+
+    const {
+      bookingId,
+    } = req.params;
+
+
+    const {
+      reason = "Cancelled by vendor",
+    } = req.body;
+
+
+    const booking =
+      await HotelBooking.findOne({
+        _id: bookingId,
+        vendor: vendorId,
+      }).session(session);
+
+
+    if (!booking) {
+
+      await session.abortTransaction();
+
+      return res.status(404).json({
+        success: false,
+        message:
+          "Booking not found.",
+      });
+    }
+
+
+    if (
+      [
+        "CANCELLED",
+        "CHECKED_OUT",
+        "COMPLETED",
+      ].includes(
+        booking.bookingStatus
+      )
+    ) {
+
+      await session.abortTransaction();
 
       return res.status(400).json({
         success: false,
-        message: "Cancelled booking cannot be confirmed",
+        message:
+          `Booking cannot be cancelled from ${booking.bookingStatus} status.`,
       });
-
     }
 
-    if (booking.bookingStatus === "CONFIRMED") {
+
+    /* =====================================================
+       RELEASE INVENTORY
+    ===================================================== */
+
+    let currentDate =
+      new Date(
+        booking.checkIn
+      );
+
+    const endDate =
+      new Date(
+        booking.checkOut
+      );
+
+
+    while (
+      currentDate < endDate
+    ) {
+
+      const inventory =
+        await HotelInventory.findOne({
+          room: booking.room,
+          vendor: vendorId,
+          date: currentDate,
+        }).session(session);
+
+
+      if (inventory) {
+
+        inventory.bookedRooms =
+          Math.max(
+            inventory.bookedRooms -
+            booking.roomsBooked,
+            0
+          );
+
+
+        inventory.availableRooms =
+          Math.max(
+            inventory.totalRooms -
+            inventory.bookedRooms -
+            inventory.blockedRooms,
+            0
+          );
+
+
+        await inventory.save({
+          session,
+        });
+      }
+
+
+      currentDate.setDate(
+        currentDate.getDate() + 1
+      );
+    }
+
+
+    /* =====================================================
+       UPDATE BOOKING
+    ===================================================== */
+
+    booking.bookingStatus =
+      "CANCELLED";
+
+
+    booking.cancellation = {
+
+      cancelled: true,
+
+      cancelledBy: "VENDOR",
+
+      cancelledAt:
+        new Date(),
+
+      reason,
+
+      refundAmount:
+        booking.paymentStatus ===
+        "PAID"
+          ? booking.totalAmount
+          : 0,
+    };
+
+
+    if (
+      booking.paymentStatus ===
+      "PAID"
+    ) {
+
+      booking.paymentStatus =
+        "REFUNDED";
+    }
+
+
+    await booking.save({
+      session,
+    });
+
+
+    await session.commitTransaction();
+
+    session.endSession();
+
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Hotel booking cancelled successfully.",
+      booking,
+    });
+
+  } catch (error) {
+
+    try {
+      await session.abortTransaction();
+    } catch (e) {}
+
+    session.endSession();
+
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to cancel hotel booking.",
+      error: error.message,
+    });
+  }
+};
+
+
+/* =========================================================
+   CHECK-IN
+   PUT /api/hotel-booking/:bookingId/check-in
+========================================================= */
+
+exports.checkIn = async (
+  req,
+  res
+) => {
+
+  try {
+
+    const vendorId =
+      getVendorId(req);
+
+    const {
+      bookingId,
+    } = req.params;
+
+
+    const {
+      idVerified = false,
+      idType = "",
+      idNumber = "",
+      remarks = "",
+    } = req.body;
+
+
+    const booking =
+      await HotelBooking.findOne({
+        _id: bookingId,
+        vendor: vendorId,
+      });
+
+
+    if (!booking) {
+
+      return res.status(404).json({
+        success: false,
+        message:
+          "Booking not found.",
+      });
+    }
+
+
+    if (
+      booking.bookingStatus !==
+      "CONFIRMED"
+    ) {
 
       return res.status(400).json({
         success: false,
-        message: "Booking already confirmed",
+        message:
+          "Only confirmed bookings can be checked in.",
       });
-
     }
 
-    booking.bookingStatus = "CONFIRMED";
 
-    booking.confirmedAt = new Date();
+    booking.bookingStatus =
+      "CHECKED_IN";
+
+
+    booking.checkInDetails = {
+
+      actualCheckIn:
+        new Date(),
+
+      actualCheckOut:
+        null,
+
+      idVerified:
+        Boolean(idVerified),
+
+      idType,
+
+      idNumber,
+
+      remarks,
+    };
+
 
     await booking.save();
 
+
     return res.status(200).json({
-
       success: true,
-
-      message: "Booking confirmed successfully.",
-
+      message:
+        "Guest checked in successfully.",
       booking,
-
     });
 
   } catch (error) {
 
-    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to check in guest.",
+      error: error.message,
+    });
+  }
+};
+
+
+/* =========================================================
+   CHECK-OUT
+   PUT /api/hotel-booking/:bookingId/check-out
+========================================================= */
+
+exports.checkOut = async (
+  req,
+  res
+) => {
+
+  try {
+
+    const vendorId =
+      getVendorId(req);
+
+    const {
+      bookingId,
+    } = req.params;
+
+
+    const booking =
+      await HotelBooking.findOne({
+        _id: bookingId,
+        vendor: vendorId,
+      });
+
+
+    if (!booking) {
+
+      return res.status(404).json({
+        success: false,
+        message:
+          "Booking not found.",
+      });
+    }
+
+
+    if (
+      booking.bookingStatus !==
+      "CHECKED_IN"
+    ) {
+
+      return res.status(400).json({
+        success: false,
+        message:
+          "Guest must be checked in first.",
+      });
+    }
+
+
+    booking.bookingStatus =
+      "CHECKED_OUT";
+
+
+    booking.checkInDetails.actualCheckOut =
+      new Date();
+
+
+    await booking.save();
+
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Guest checked out successfully.",
+      booking,
+    });
+
+  } catch (error) {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        "Failed to check out guest.",
+      error: error.message,
     });
-
   }
-
 };

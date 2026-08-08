@@ -1,4 +1,4 @@
-// routes/hotelBooking.routes.js
+// routes/HotelRoom.routes.js
 
 const express = require("express");
 
@@ -7,111 +7,109 @@ const router = express.Router();
 const protect = require("../middleware/auth.middleware");
 
 const {
-  createBooking,
-  getVendorBookings,
-  getSingleBooking,
-  confirmBooking,
-  cancelBooking,
-  checkIn,
-  checkOut,
-} = require("../controllers/hotelBooking.controller");
+  createRoom,
+  getHotelRooms,
+  getRoomById,
+  updateRoom,
+  deleteRoom,
+  updateRoomStatus,
+  updateRoomInventory,
+  deleteRoomImage,
+} = require("../controllers/HotelRoom.controller");
 
 
 /* ============================================================
-   AUTHENTICATION
+   ALL ROUTES REQUIRE VENDOR AUTHENTICATION
 ============================================================ */
 
 router.use(protect);
 
 
 /* ============================================================
-   CREATE HOTEL BOOKING
-
-   POST /api/hotel-booking
+   CREATE ROOM
+   POST /api/hotel-rooms
 ============================================================ */
 
 router.post(
   "/",
-  createBooking
+  createRoom
 );
 
 
 /* ============================================================
-   GET ALL VENDOR BOOKINGS
-
-   GET /api/hotel-booking
-
-   Optional Query:
-   ?status=CONFIRMED
-   ?paymentStatus=PAID
-   ?hotelId=HOTEL_ID
-   ?page=1
-   ?limit=20
+   GET ALL ROOMS OF A HOTEL
+   GET /api/hotel-rooms/hotel/:hotelId
 ============================================================ */
 
 router.get(
-  "/",
-  getVendorBookings
+  "/hotel/:hotelId",
+  getHotelRooms
 );
 
 
 /* ============================================================
-   GET SINGLE BOOKING
-
-   GET /api/hotel-booking/:bookingId
+   GET SINGLE ROOM
+   GET /api/hotel-rooms/:roomId
 ============================================================ */
 
 router.get(
-  "/:bookingId",
-  getSingleBooking
+  "/:roomId",
+  getRoomById
 );
 
 
 /* ============================================================
-   CONFIRM BOOKING
-
-   PUT /api/hotel-booking/:bookingId/confirm
+   UPDATE ROOM
+   PUT /api/hotel-rooms/:roomId
 ============================================================ */
 
 router.put(
-  "/:bookingId/confirm",
-  confirmBooking
+  "/:roomId",
+  updateRoom
 );
 
 
 /* ============================================================
-   CANCEL BOOKING
-
-   PUT /api/hotel-booking/:bookingId/cancel
+   DELETE ROOM
+   DELETE /api/hotel-rooms/:roomId
 ============================================================ */
 
-router.put(
-  "/:bookingId/cancel",
-  cancelBooking
+router.delete(
+  "/:roomId",
+  deleteRoom
 );
 
 
 /* ============================================================
-   CHECK-IN GUEST
-
-   PUT /api/hotel-booking/:bookingId/check-in
+   UPDATE ROOM STATUS
+   PUT /api/hotel-rooms/:roomId/status
 ============================================================ */
 
 router.put(
-  "/:bookingId/check-in",
-  checkIn
+  "/:roomId/status",
+  updateRoomStatus
 );
 
 
 /* ============================================================
-   CHECK-OUT GUEST
-
-   PUT /api/hotel-booking/:bookingId/check-out
+   UPDATE ROOM INVENTORY
+   PUT /api/hotel-rooms/:roomId/inventory
 ============================================================ */
 
 router.put(
-  "/:bookingId/check-out",
-  checkOut
+  "/:roomId/inventory",
+  updateRoomInventory
+);
+
+
+/* ============================================================
+   DELETE ROOM IMAGE
+   PUT /api/hotel-rooms/:roomId/images/delete
+============================================================ */
+
+router.put(
+  "/:roomId/images/delete",
+  deleteRoomImage
 );
 
 

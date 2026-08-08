@@ -1,212 +1,224 @@
-// models/HotelBooking.model.js
-
 const mongoose = require("mongoose");
-
-const guestSchema = new mongoose.Schema(
-  {
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    age: Number,
-
-    gender: {
-      type: String,
-      enum: ["Male", "Female", "Other"],
-    },
-
-    phone: String,
-
-    email: String,
-
-    idProofType: {
-      type: String,
-      enum: [
-        "AADHAR",
-        "PAN",
-        "PASSPORT",
-        "DRIVING_LICENSE",
-        "VOTER_ID",
-        "OTHER",
-      ],
-      required: true,
-    },
-
-    idProofNumber: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    idProofFront: {
-      type: String,
-      required: true,
-    },
-
-    idProofBack: {
-      type: String,
-      default: "",
-    },
-  },
-  { _id: false }
-);
 
 const hotelBookingSchema = new mongoose.Schema(
   {
-    bookingId: {
-      type: String,
-      unique: true,
-    },
+    /* =====================================================
+       REFERENCES
+    ===================================================== */
 
-    // User
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-
-    // Vendor
-    vendor: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Vendor",
-      required: true,
-    },
-
-    // Hotel
     hotel: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Hotel",
       required: true,
+      index: true,
     },
 
-    // Room (_id from Hotel.rooms)
-    roomId: {
+    room: {
       type: mongoose.Schema.Types.ObjectId,
+      ref: "HotelRoom",
       required: true,
+      index: true,
     },
 
-    // Snapshot
-    hotelName: {
+    vendor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Vendor",
+      required: true,
+      index: true,
+    },
+
+
+    /* =====================================================
+       BOOKING NUMBER
+    ===================================================== */
+
+    bookingNumber: {
       type: String,
       required: true,
+      unique: true,
+      index: true,
     },
 
-    roomName: {
-      type: String,
-      required: true,
+
+    /* =====================================================
+       GUEST DETAILS
+    ===================================================== */
+
+    guest: {
+      name: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+
+      email: {
+        type: String,
+        required: true,
+        lowercase: true,
+        trim: true,
+      },
+
+      phone: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+
+      alternatePhone: {
+        type: String,
+        default: "",
+      },
+
+      adults: {
+        type: Number,
+        required: true,
+        min: 1,
+      },
+
+      children: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      specialRequest: {
+        type: String,
+        default: "",
+      },
     },
 
-    roomType: {
-      type: String,
-      required: true,
-    },
 
-    hotelAddress: String,
+    /* =====================================================
+       STAY DETAILS
+    ===================================================== */
 
-    hotelCity: String,
-
-    hotelState: String,
-
-    hotelImage: String,
-
-    // Booking Date
     checkIn: {
       type: Date,
       required: true,
+      index: true,
     },
 
     checkOut: {
       type: Date,
       required: true,
+      index: true,
     },
 
-    totalNights: {
+    nights: {
       type: Number,
       required: true,
-    },
-
-    // Rooms
-    roomsBooked: {
-      type: Number,
-      default: 1,
       min: 1,
     },
 
-    adults: {
+    roomsBooked: {
       type: Number,
-      default: 1,
-    },
-
-    children: {
-      type: Number,
-      default: 0,
-    },
-
-    // Primary Guest
-    guestName: {
-      type: String,
       required: true,
+      min: 1,
     },
 
-    guestPhone: {
-      type: String,
-      required: true,
-    },
 
-    guestEmail: {
+    /* =====================================================
+       ROOM SNAPSHOT
+       Booking ke time ka data preserve rahega
+    ===================================================== */
+
+    roomName: {
       type: String,
       default: "",
     },
 
-    specialRequest: {
+    roomType: {
       type: String,
       default: "",
     },
 
-    // All Guests
-    guests: {
-      type: [guestSchema],
-      default: [],
-    },
 
-    // Pricing Snapshot
+    /* =====================================================
+       PRICING
+    ===================================================== */
+
     pricePerNight: {
       type: Number,
       required: true,
+      min: 0,
     },
 
-    roomPrice: {
+    roomAmount: {
       type: Number,
       required: true,
+      min: 0,
     },
 
-    tax: {
+    extraGuestAmount: {
       type: Number,
       default: 0,
+      min: 0,
+    },
+
+    mealAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    taxAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
 
     serviceCharge: {
       type: Number,
       default: 0,
+      min: 0,
     },
 
-    discount: {
+    discountAmount: {
       type: Number,
       default: 0,
+      min: 0,
+    },
+
+    couponDiscount: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
 
     totalAmount: {
       type: Number,
       required: true,
+      min: 0,
     },
 
-    // Payment
+
+    /* =====================================================
+       COUPON
+    ===================================================== */
+
+    couponCode: {
+      type: String,
+      default: "",
+      uppercase: true,
+      trim: true,
+    },
+
+
+    /* =====================================================
+       PAYMENT
+    ===================================================== */
+
     paymentMethod: {
       type: String,
-      enum: ["ONLINE", "COD"],
-      default: "ONLINE",
+      enum: [
+        "ONLINE",
+        "UPI",
+        "CARD",
+        "NET_BANKING",
+        "PAY_AT_HOTEL",
+        "CASH",
+      ],
+      required: true,
     },
 
     paymentStatus: {
@@ -216,65 +228,252 @@ const hotelBookingSchema = new mongoose.Schema(
         "PAID",
         "FAILED",
         "REFUNDED",
+        "PARTIALLY_REFUNDED",
       ],
       default: "PENDING",
+      index: true,
     },
 
-    razorpayOrderId: String,
+    transactionId: {
+      type: String,
+      default: "",
+    },
 
-    razorpayPaymentId: String,
+    razorpayOrderId: {
+      type: String,
+      default: "",
+    },
 
-    razorpaySignature: String,
+    razorpayPaymentId: {
+      type: String,
+      default: "",
+    },
 
-    paidAt: Date,
+    razorpaySignature: {
+      type: String,
+      default: "",
+    },
 
-    // Booking Status
+    paidAt: {
+      type: Date,
+      default: null,
+    },
+
+
+    /* =====================================================
+       BOOKING STATUS
+    ===================================================== */
+
     bookingStatus: {
       type: String,
       enum: [
         "PENDING",
         "CONFIRMED",
-        "REJECTED",
+        "CANCELLED",
         "CHECKED_IN",
         "CHECKED_OUT",
+        "NO_SHOW",
         "COMPLETED",
-        "CANCELLED",
       ],
       default: "PENDING",
+      index: true,
     },
 
-    cancellationReason: String,
 
-    cancelledBy: {
+    /* =====================================================
+       CANCELLATION
+    ===================================================== */
+
+    cancellation: {
+      cancelled: {
+        type: Boolean,
+        default: false,
+      },
+
+      cancelledBy: {
+        type: String,
+        enum: [
+          "GUEST",
+          "VENDOR",
+          "ADMIN",
+          "",
+        ],
+        default: "",
+      },
+
+      cancelledAt: {
+        type: Date,
+        default: null,
+      },
+
+      reason: {
+        type: String,
+        default: "",
+      },
+
+      refundAmount: {
+        type: Number,
+        default: 0,
+      },
+    },
+
+
+    /* =====================================================
+       ADMIN COMMISSION
+    ===================================================== */
+
+    commissionPercentage: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    adminCommission: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    vendorAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+
+    /* =====================================================
+       SETTLEMENT
+    ===================================================== */
+
+    settlementStatus: {
       type: String,
-      enum: ["USER", "VENDOR", "ADMIN"],
+      enum: [
+        "PENDING",
+        "PROCESSING",
+        "SETTLED",
+        "FAILED",
+      ],
+      default: "PENDING",
+      index: true,
     },
 
-    cancelledAt: Date,
+    settlementId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "HotelSettlement",
+      default: null,
+    },
 
-    confirmedAt: Date,
+    settledAt: {
+      type: Date,
+      default: null,
+    },
 
-    checkedInAt: Date,
 
-    checkedOutAt: Date,
+    /* =====================================================
+       CHECK-IN DETAILS
+    ===================================================== */
 
-    completedAt: Date,
+    checkInDetails: {
+      actualCheckIn: {
+        type: Date,
+        default: null,
+      },
 
-    // Review
-    isReviewed: {
+      actualCheckOut: {
+        type: Date,
+        default: null,
+      },
+
+      idVerified: {
+        type: Boolean,
+        default: false,
+      },
+
+      idType: {
+        type: String,
+        default: "",
+      },
+
+      idNumber: {
+        type: String,
+        default: "",
+      },
+
+      remarks: {
+        type: String,
+        default: "",
+      },
+    },
+
+
+    /* =====================================================
+       VENDOR NOTES
+    ===================================================== */
+
+    vendorNotes: {
+      type: String,
+      default: "",
+    },
+
+
+    /* =====================================================
+       SOURCE
+    ===================================================== */
+
+    source: {
+      type: String,
+      enum: [
+        "WEBSITE",
+        "MOBILE_APP",
+        "ADMIN",
+        "VENDOR",
+      ],
+      default: "WEBSITE",
+    },
+
+
+    /* =====================================================
+       ACTIVE
+    ===================================================== */
+
+    isActive: {
       type: Boolean,
-      default: false,
+      default: true,
     },
-
-    // Vendor Notes
-    vendorRemark: String,
-
-    adminRemark: String,
   },
+
   {
     timestamps: true,
   }
 );
+
+
+/* =========================================================
+   INDEXES
+========================================================= */
+
+hotelBookingSchema.index({
+  vendor: 1,
+  bookingStatus: 1,
+});
+
+hotelBookingSchema.index({
+  hotel: 1,
+  checkIn: 1,
+  checkOut: 1,
+});
+
+hotelBookingSchema.index({
+  room: 1,
+  checkIn: 1,
+  checkOut: 1,
+});
+
+hotelBookingSchema.index({
+  paymentStatus: 1,
+  settlementStatus: 1,
+});
+
 
 module.exports = mongoose.model(
   "HotelBooking",
