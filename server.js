@@ -100,6 +100,12 @@ app.use("/api/motel-vendors", motelVendorRoutes);
 const homestayUnitRoutes = require("./routes/homestayUnit.routes");
 
 app.use("/api/homestay-units", homestayUnitRoutes);
+const homestayInventoryRoutes = require("./routes/homestayInventory.routes");
+
+app.use(
+  "/api/homestay-inventory",
+  homestayInventoryRoutes
+);
 const campsiteRoutes = require("./routes/vendorCampsite.routes");
 
 app.use("/api/vendor/campsite", campsiteRoutes);
