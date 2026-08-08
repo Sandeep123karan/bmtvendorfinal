@@ -1,45 +1,4 @@
-// const Cab = require("../models/Cab.model");
-// const CabBooking = require("../models/CabBooking.model");
 
-
-// exports.searchCabs = async (req, res) => {
-//   const { fromCity, toCity } = req.query;
-
-//   const cabs = await Cab.find({
-//     fromCity,
-//     toCity,
-//     availableSeats: { $gt: 0 },
-//     isActive: true,
-//   });
-
-//   res.json(cabs);
-// };
-
-// // 📌 BOOK CAB
-// exports.bookCab = async (req, res) => {
-//   const { cabId, seatsBooked, pickupLocation, dropLocation } = req.body;
-
-//   const cab = await Cab.findById(cabId);
-//   if (!cab) return res.status(404).json({ message: "Cab not found" });
-
-//   if (cab.availableSeats < seatsBooked) {
-//     return res.status(400).json({ message: "Not enough seats available" });
-//   }
-
-//   cab.availableSeats -= seatsBooked;
-//   await cab.save();
-
-//   const booking = await CabBooking.create({
-//     user: req.user._id,
-//     cab: cabId,
-//     pickupLocation,
-//     dropLocation,
-//     seatsBooked,
-//     totalPrice: seatsBooked * cab.price,
-//   });
-
-//   res.json({ success: true, booking });
-// };
 const Cab = require("../models/Cab.model");
 const CabBooking = require("../models/CabBooking.model");
 

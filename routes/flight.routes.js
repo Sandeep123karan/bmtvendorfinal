@@ -1,25 +1,4 @@
-// const router = require("express").Router();
-// const protect = require("../middleware/auth.middleware");
-// const upload = require("../utils/upload");
 
-// const {
-//   addFlight,
-//   getVendorFlights,
-//   updateFlight,
-//   deleteFlight,
-//   searchFlights,
-// } = require("../controllers/flight.controller");
-
-// /* VENDOR */
-// router.post("/", protect, upload.single("image"), addFlight);
-// router.get("/vendor", protect, getVendorFlights);
-// router.put("/:id", protect, upload.single("image"), updateFlight);
-// router.delete("/:id", protect, deleteFlight);
-
-// /* USER */
-// router.get("/search", searchFlights);
-
-// module.exports = router;
 const router = require("express").Router();
 const protect = require("../middleware/auth.middleware");
 const upload = require("../utils/upload");

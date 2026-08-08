@@ -1,22 +1,4 @@
-// const router = require("express").Router();
-// const protect = require("../middleware/auth.middleware");
-// const upload = require("../utils/upload");
 
-// const {
-//   addCab,
-//   getVendorCabs,
-//   updateCab,
-//   deleteCab,
-// } = require("../controllers/cab.controller");
-
-// router.use(protect);
-
-// router.post("/", upload.single("image"), addCab);
-// router.get("/", getVendorCabs);
-// router.put("/:id", upload.single("image"), updateCab);
-// router.delete("/:id", deleteCab);
-
-// module.exports = router;
 const router = require("express").Router();
 const protect = require("../middleware/auth.middleware");
 const upload = require("../utils/upload");

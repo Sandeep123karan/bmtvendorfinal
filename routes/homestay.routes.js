@@ -1,21 +1,4 @@
-// const express = require("express");
-// const protect = require("../middleware/auth.middleware");
-// const upload = require("../utils/upload");
-// const {
-//   createHomestay,
-//   getMyHomestays,
-//   deleteHomestay,
-// } = require("../controllers/homestay.controller");
 
-// const router = express.Router();
-
-// router.use(protect);
-
-// router.post("/", upload.array("images", 10), createHomestay);
-// router.get("/", getMyHomestays);
-// router.delete("/:id", deleteHomestay);
-
-// module.exports = router;
 const express = require("express");
 const protect = require("../middleware/auth.middleware");
 const upload = require("../utils/upload");
