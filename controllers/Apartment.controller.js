@@ -1,13 +1,41 @@
 const Apartment = require("../models/Apartment.model");
 const cloudinary = require("../config/cloudinary");
 
-/* ================= HELPER ================= */
+
 const parseJSON = (val, fallback) => {
   try {
-    return typeof val === "string" ? JSON.parse(val) : val ?? fallback;
+    if (typeof val === "string") {
+      return JSON.parse(val);
+    }
+
+    return val ?? fallback;
   } catch {
     return fallback;
   }
+};
+
+
+const parseBoolean = (value, fallback = false) => {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  return String(value).toLowerCase() === "true";
+};
+
+
+const parseNumber = (value, fallback = null) => {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  const number = Number(value);
+
+  return Number.isNaN(number) ? fallback : number;
 };
 
 /* =====================================================
@@ -17,16 +45,7 @@ exports.createApartment = async (req, res) => {
   try {
     const b = req.body;
 
-    // Upload images to Cloudinary
-    const imageUrls = [];
-    if (req.files && req.files.length > 0) {
-      for (let file of req.files) {
-        const result = await cloudinary.uploader.upload(file.path, {
-          folder: "vendor-apartments",
-        });
-        imageUrls.push(result.secure_url);
-      }
-    }
+    const imageUrls = await uploadImages(req.files || []);
 
     const apartment = await Apartment.create({
       vendor: req.vendor._id,
@@ -34,97 +53,195 @@ exports.createApartment = async (req, res) => {
       // BASIC
       apartmentName: b.apartmentName,
       propertyType: b.propertyType || "Apartment",
-      description: b.description,
-      hostName: b.hostName,
+      shortDescription: b.shortDescription || "",
+      description: b.description || "",
+      hostName: b.hostName || "",
 
       // CONTACT
-      phone: b.phone,
-      altPhone: b.altPhone,
-      email: b.email,
+      phone: b.phone || "",
+      altPhone: b.altPhone || "",
+      email: b.email || "",
 
       // LOCATION
       country: b.country || "India",
-      state: b.state,
-      city: b.city,
-      area: b.area,
-      address: b.address,
-      pincode: b.pincode,
-      landmark: b.landmark,
-      mapLocation: { lat: b.lat, lng: b.lng },
+      state: b.state || "",
+      city: b.city || "",
+      area: b.area || "",
+      address: b.address || "",
+      pincode: b.pincode || "",
+      landmark: b.landmark || "",
+
+      mapLocation: {
+        lat: parseNumber(b.lat),
+        lng: parseNumber(b.lng),
+      },
 
       // BUILDING
-      buildingName: b.buildingName,
-      towerName: b.towerName,
-      floorNumber: b.floorNumber,
-      totalFloors: b.totalFloors,
-      flatNumber: b.flatNumber,
-      societyName: b.societyName,
+      buildingName: b.buildingName || "",
+      towerName: b.towerName || "",
+      floorNumber: parseNumber(b.floorNumber),
+      totalFloors: parseNumber(b.totalFloors),
+      flatNumber: b.flatNumber || "",
+      societyName: b.societyName || "",
 
-      // APARTMENT DETAILS
-      apartmentType: b.apartmentType,
-      furnishing: b.furnishing,
-      carpetArea: b.carpetArea,
-      superArea: b.superArea,
-      bedrooms: b.bedrooms,
-      hall: b.hall,
-      kitchen: b.kitchen,
-      bathrooms: b.bathrooms,
-      balcony: b.balcony,
-      maxGuests: b.maxGuests,
-      beds: b.beds,
+      // CONFIGURATION
+      apartmentType: b.apartmentType || "1BHK",
+      furnishing: b.furnishing || "Fully Furnished",
+      carpetArea: parseNumber(b.carpetArea),
+      superArea: parseNumber(b.superArea),
+      areaUnit: b.areaUnit || "sqft",
 
-      // CAPACITY EXTRAS
-      extraMattressAllowed: b.extraMattressAllowed === "true",
-      childrenAllowed: b.childrenAllowed === "true",
-      petsAllowed: b.petsAllowed === "true",
+      bedrooms: parseNumber(b.bedrooms, 1),
+      hall: parseNumber(b.hall, 1),
+      kitchen: parseNumber(b.kitchen, 1),
+      bathrooms: parseNumber(b.bathrooms, 1),
+      balcony: parseNumber(b.balcony, 0),
 
-      // CHECK IN / OUT
-      checkInTime: b.checkInTime,
-      checkOutTime: b.checkOutTime,
+      maxGuests: parseNumber(b.maxGuests, 2),
+      maxAdults: parseNumber(b.maxAdults, 2),
+      maxChildren: parseNumber(b.maxChildren, 0),
+      beds: parseNumber(b.beds, 1),
+
+      // BED CONFIGURATION
+      bedConfiguration: parseJSON(
+        b.bedConfiguration,
+        []
+      ),
+
+      // EXTRAS
+      extraMattressAllowed: parseBoolean(
+        b.extraMattressAllowed
+      ),
+
+      maxExtraMattress: parseNumber(
+        b.maxExtraMattress,
+        0
+      ),
+
+      childrenAllowed: parseBoolean(
+        b.childrenAllowed
+      ),
+
+      petsAllowed: parseBoolean(
+        b.petsAllowed
+      ),
+
+      // CHECK-IN / OUT
+      checkInTime: b.checkInTime || "14:00",
+      checkOutTime: b.checkOutTime || "11:00",
 
       // AMENITIES
       amenities: parseJSON(b.amenities, []),
 
       // FOOD
-      kitchenAvailable: b.kitchenAvailable === "true",
-      selfCookingAllowed: b.selfCookingAllowed === "true",
-      vegFoodAvailable: b.vegFoodAvailable === "true",
-      nonVegAllowed: b.nonVegAllowed === "true",
+      kitchenAvailable: parseBoolean(
+        b.kitchenAvailable
+      ),
+
+      selfCookingAllowed: parseBoolean(
+        b.selfCookingAllowed
+      ),
+
+      vegFoodAvailable: parseBoolean(
+        b.vegFoodAvailable
+      ),
+
+      nonVegAllowed: parseBoolean(
+        b.nonVegAllowed
+      ),
+
+      mealPlan: b.mealPlan || "Room Only",
 
       // PRICING
       pricing: {
-        basePrice: b.basePrice,
-        monthlyPrice: b.monthlyPrice,
-        weekendPrice: b.weekendPrice,
-        extraGuestPrice: b.extraGuestPrice,
-        cleaningFee: b.cleaningFee,
-        securityDeposit: b.securityDeposit,
+        basePrice: parseNumber(
+          b.basePrice,
+          0
+        ),
+
+        monthlyPrice: parseNumber(
+          b.monthlyPrice,
+          0
+        ),
+
+        weekendPrice: parseNumber(
+          b.weekendPrice,
+          0
+        ),
+
+        extraGuestPrice: parseNumber(
+          b.extraGuestPrice,
+          0
+        ),
+
+        extraMattressPrice: parseNumber(
+          b.extraMattressPrice,
+          0
+        ),
+
+        cleaningFee: parseNumber(
+          b.cleaningFee,
+          0
+        ),
+
+        securityDeposit: parseNumber(
+          b.securityDeposit,
+          0
+        ),
+
+        currency: b.currency || "INR",
       },
 
-      // ROOM INFO
-      roomType: b.roomType,
-      mealPlan: b.mealPlan,
+      // ROOM TYPE
+      roomType:
+        b.roomType || "Entire Apartment",
+
+      totalUnits: parseNumber(
+        b.totalUnits,
+        1
+      ),
 
       // AVAILABILITY
-      availableFrom: b.availableFrom,
-      availableTo: b.availableTo,
+      availableFrom: b.availableFrom || null,
+      availableTo: b.availableTo || null,
 
       // RULES
-      houseRules: parseJSON(b.houseRules, {}),
-      cancellationPolicy: b.cancellationPolicy,
+      houseRules: parseJSON(
+        b.houseRules,
+        {}
+      ),
+
+      cancellationPolicy:
+        b.cancellationPolicy || "",
 
       // MEDIA
       thumbnail: imageUrls[0] || "",
       images: imageUrls,
 
       // META
-      notes: b.notes,
+      notes: b.notes || "",
+
+      // Vendor should NOT control approval
+      status: "pending",
     });
 
-    res.status(201).json({ success: true, data: apartment });
+
+    return res.status(201).json({
+      success: true,
+      message: "Apartment created successfully. Waiting for approval.",
+      data: apartment,
+    });
+
   } catch (error) {
-    console.error("❌ CREATE APARTMENT ERROR:", error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error(
+      "CREATE APARTMENT ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 

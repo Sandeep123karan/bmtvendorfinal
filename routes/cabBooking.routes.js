@@ -1,25 +1,69 @@
-const router = require("express").Router();
+const express = require("express");
+
+const router = express.Router();
+
 const protect = require("../middleware/auth.middleware");
 
 const {
-  searchCabs,
-  bookCab,
-  getUserCabBookings,
-  cancelCabBooking,
+  createBooking,
+  getVendorBookings,
+  getBookingById,
+  confirmBooking,
+  assignDriver,
+  startTrip,
+  completeTrip,
+  cancelBooking,
 } = require("../controllers/cabBooking.controller");
+
 
 /* ================= USER ================= */
 
-// 🔍 Search
-router.get("/search", searchCabs);
+router.post("/", createBooking);
 
-// 📌 Book
-router.post("/book", protect, bookCab);
 
-// 📥 My bookings
-router.get("/my-bookings", protect, getUserCabBookings);
+/* ================= VENDOR ================= */
 
-// ❌ Cancel booking
-router.put("/cancel/:id", protect, cancelCabBooking);
+router.get(
+  "/vendor/my-bookings",
+  protect,
+  getVendorBookings
+);
+
+router.get(
+  "/vendor/:id",
+  protect,
+  getBookingById
+);
+
+router.patch(
+  "/vendor/:id/confirm",
+  protect,
+  confirmBooking
+);
+
+router.patch(
+  "/vendor/:id/assign-driver",
+  protect,
+  assignDriver
+);
+
+router.patch(
+  "/vendor/:id/start-trip",
+  protect,
+  startTrip
+);
+
+router.patch(
+  "/vendor/:id/complete-trip",
+  protect,
+  completeTrip
+);
+
+router.patch(
+  "/vendor/:id/cancel",
+  protect,
+  cancelBooking
+);
+
 
 module.exports = router;

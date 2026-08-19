@@ -1,27 +1,66 @@
-const router = require("express").Router();
+const express = require("express");
+const router = express.Router();
+
 const protect = require("../middleware/auth.middleware");
 
 const {
-  bookBus,
-  cancelBusBooking,
-  getUserBusBookings,
+  createBusBooking,
+  getAllBusBookings,
   getVendorBusBookings,
-} = require("../controllers/busBooking.controller");
+  getBusBookingById,
+  confirmBusBooking,
+  cancelBusBooking,
+} = require("../controllers/BusBooking.controller");
 
-/* ================= USER ================= */
 
-// Book bus
-router.post("/book", protect, bookBus);
+/* =========================================================
+   PUBLIC / USER BOOKING
+========================================================= */
 
-// My bookings
-router.get("/my-bookings", protect, getUserBusBookings);
+// Create Bus Booking
+router.post("/", createBusBooking);
+
+
+/* =========================================================
+   VENDOR ROUTES
+========================================================= */
+
+// Get logged-in vendor bookings
+router.get(
+  "/vendor/my-bookings",
+  protect,
+  getVendorBusBookings
+);
+
+// Get single booking
+router.get(
+  "/:id",
+  protect,
+  getBusBookingById
+);
+
+// Confirm booking
+router.patch(
+  "/:id/confirm",
+  protect,
+  confirmBusBooking
+);
 
 // Cancel booking
-router.put("/cancel/:id", protect, cancelBusBooking);
+router.patch(
+  "/:id/cancel",
+  protect,
+  cancelBusBooking
+);
 
-/* ================= VENDOR ================= */
 
-// Vendor sees bookings of his buses
-router.get("/vendor-bookings", protect, getVendorBusBookings);
+/* =========================================================
+   ADMIN / ALL BOOKINGS
+   फिलहाल बिना middleware रखा है
+========================================================= */
+
+// Get all bookings
+router.get("/", getAllBusBookings);
+
 
 module.exports = router;

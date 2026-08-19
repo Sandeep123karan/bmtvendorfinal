@@ -1,119 +1,180 @@
-// models/Vendor.model.js
-
 const mongoose = require("mongoose");
 
 const vendorSchema = new mongoose.Schema(
   {
-    // ===========================
-    // Basic Details
-    // ===========================
+    // ==========================================
+    // BASIC ACCOUNT DETAILS
+    // ==========================================
+
     name: {
       type: String,
-      required: true,
+      default: "",
       trim: true,
     },
 
     email: {
       type: String,
-      required: true,
-      unique: true,
+      default: "",
       lowercase: true,
       trim: true,
+      sparse: true,
     },
 
     phone: {
       type: String,
-      required: true,
-      unique: true, 
+      default: "",
       trim: true,
+      sparse: true,
     },
 
     password: {
       type: String,
-      required: true,
+      default: "",
     },
 
- service: {
-  type: String,
-  enum: [
-   
+    profileImage: {
+      type: String,
+      default: "",
+    },
 
-    // Hotels & Stay
-    "hotel",
-    "homestay",
-    "resort",
-    "villa",
-    "apartment",
-    "guesthouse",
-    "hostel",
-    "camp",
-    "farmhouse",
+    // ==========================================
+    // SELECT BUSINESS / SERVICES
+    // Ek vendor multiple services select kar sakta hai
+    // ==========================================
 
-    // Transport
-    "cab",
-   
-    "bus",
-   
+    services: [
+      {
+        type: String,
+        enum: [
+          // STAY
+          "hotel",
+          "homestay",
+          "resort",
+          "villa",
+          "apartment",
+          "guesthouse",
+          "hostel",
+          "camp",
+          "farmhouse",
+          "vacation-home",
+          "palace",
+          "motel",
 
-    // Holiday
-    "holiday-package",
-    
+          // TRANSPORT
+          "cab",
+          "car-rental",
+          "bike-rental",
+          "bus",
 
-   
+          // HOLIDAY
+          "holiday-package",
 
-    // Religious
-    "BMT Darshan",
-   
+          // RELIGIOUS
+          "BMT Darshan",
 
-    // Visa
-    "visa",
+          // OTHER TRAVEL SERVICES
+          "visa",
+          "travel-insurance",
+          "cruise",
 
-    // Insurance
-    "travel-insurance",
+          "other",
+        ],
+      },
+    ],
 
+    // Old code compatibility
+    // Agar existing controller `service` use kar raha hai
+    service: {
+      type: String,
+      default: "",
+    },
 
+    // ==========================================
+    // COMPANY / BUSINESS DETAILS
+    // ==========================================
 
-    // Cruise
-    "cruise",
-
-
-
-  
-
-
-  
-    "vacation-home",
-
-    // Misc
-    "other"
-  ],
-  required: true,
-},
-
-    // ===========================
-    // Company Details
-    // ===========================
     companyName: {
       type: String,
       default: "",
       trim: true,
     },
 
-    gstNumber: {
+    businessName: {
       type: String,
       default: "",
-      uppercase: true,
       trim: true,
     },
 
-    panNumber: {
+    legalBusinessName: {
       type: String,
       default: "",
-      uppercase: true,
       trim: true,
     },
+
+    businessType: {
+      type: String,
+      enum: [
+        "",
+        "individual",
+        "proprietorship",
+        "partnership",
+        "private-limited",
+        "public-limited",
+        "llp",
+        "other",
+      ],
+      default: "",
+    },
+
+    // ==========================================
+    // BUSINESS CONTACT
+    // ==========================================
+
+    businessEmail: {
+      type: String,
+      default: "",
+      lowercase: true,
+      trim: true,
+    },
+
+    businessPhone: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    alternatePhone: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    website: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    // ==========================================
+    // ADDRESS
+    // ==========================================
 
     address: {
+      type: String,
+      default: "",
+    },
+
+    addressLine1: {
+      type: String,
+      default: "",
+    },
+
+    addressLine2: {
+      type: String,
+      default: "",
+    },
+
+    landmark: {
       type: String,
       default: "",
     },
@@ -128,14 +189,62 @@ const vendorSchema = new mongoose.Schema(
       default: "",
     },
 
+    country: {
+      type: String,
+      default: "India",
+    },
+
     pincode: {
       type: String,
       default: "",
     },
 
-    // ===========================
-    // Aadhaar
-    // ===========================
+    // ==========================================
+    // TAX DETAILS
+    // ==========================================
+
+    gstNumber: {
+      type: String,
+      default: "",
+      uppercase: true,
+      trim: true,
+    },
+
+    gstRegistrationNumber: {
+      type: String,
+      default: "",
+      uppercase: true,
+      trim: true,
+    },
+
+    gstCertificate: {
+      type: String,
+      default: "",
+    },
+
+    panNumber: {
+      type: String,
+      default: "",
+      uppercase: true,
+      trim: true,
+    },
+
+    panCardNumber: {
+      type: String,
+      default: "",
+      uppercase: true,
+      trim: true,
+    },
+
+    panCard: {
+      type: String,
+      default: "",
+    },
+
+    // ==========================================
+    // AADHAAR
+    // ==========================================
+
     aadharNumber: {
       type: String,
       default: "",
@@ -152,39 +261,10 @@ const vendorSchema = new mongoose.Schema(
       default: "",
     },
 
-    // ===========================
-    // PAN
-    // ===========================
-    panCardNumber: {
-      type: String,
-      default: "",
-      uppercase: true,
-      trim: true,
-    },
+    // ==========================================
+    // BANK DETAILS
+    // ==========================================
 
-    panCard: {
-      type: String,
-      default: "",
-    },
-
-    // ===========================
-    // GST
-    // ===========================
-    gstRegistrationNumber: {
-      type: String,
-      default: "",
-      uppercase: true,
-      trim: true,
-    },
-
-    gstCertificate: {
-      type: String,
-      default: "",
-    },
-
-    // ===========================
-    // Bank Details
-    // ===========================
     accountHolderName: {
       type: String,
       default: "",
@@ -195,7 +275,17 @@ const vendorSchema = new mongoose.Schema(
       default: "",
     },
 
+    branchName: {
+      type: String,
+      default: "",
+    },
+
     accountNumber: {
+      type: String,
+      default: "",
+    },
+
+    confirmAccountNumber: {
       type: String,
       default: "",
     },
@@ -204,6 +294,7 @@ const vendorSchema = new mongoose.Schema(
       type: String,
       default: "",
       uppercase: true,
+      trim: true,
     },
 
     cancelledCheque: {
@@ -216,9 +307,150 @@ const vendorSchema = new mongoose.Schema(
       default: "",
     },
 
-    // ===========================
-    // Verification
-    // ===========================
+    // ==========================================
+    // CAR RENTAL / CAB DETAILS
+    // ==========================================
+
+    carRentalDetails: {
+      businessModel: {
+        type: String,
+        default: "",
+      },
+
+      totalVehicles: {
+        type: Number,
+        default: 0,
+      },
+
+      vehicleTypes: [
+        {
+          type: String,
+        },
+      ],
+
+      serviceCities: [
+        {
+          type: String,
+        },
+      ],
+
+      airportPickupAvailable: {
+        type: Boolean,
+        default: false,
+      },
+
+      outstationAvailable: {
+        type: Boolean,
+        default: false,
+      },
+
+      localRentalAvailable: {
+        type: Boolean,
+        default: false,
+      },
+
+      driverProvided: {
+        type: Boolean,
+        default: false,
+      },
+
+      selfDriveAvailable: {
+        type: Boolean,
+        default: false,
+      },
+
+      transportLicenseNumber: {
+        type: String,
+        default: "",
+      },
+
+      licenseDocument: {
+        type: String,
+        default: "",
+      },
+    },
+
+    // ==========================================
+    // BUS OPERATOR DETAILS
+    // ==========================================
+
+    busDetails: {
+      operatorName: {
+        type: String,
+        default: "",
+      },
+
+      totalBuses: {
+        type: Number,
+        default: 0,
+      },
+
+      busTypes: [
+        {
+          type: String,
+        },
+      ],
+
+      operatingCities: [
+        {
+          type: String,
+        },
+      ],
+
+      routes: [
+        {
+          type: String,
+        },
+      ],
+
+      transportPermitNumber: {
+        type: String,
+        default: "",
+      },
+
+      transportPermitDocument: {
+        type: String,
+        default: "",
+      },
+
+      operatorLicenseNumber: {
+        type: String,
+        default: "",
+      },
+
+      operatorLicenseDocument: {
+        type: String,
+        default: "",
+      },
+    },
+
+    // ==========================================
+    // HOTEL / STAY BUSINESS DETAILS
+    // ==========================================
+
+    stayDetails: {
+      totalProperties: {
+        type: Number,
+        default: 0,
+      },
+
+      propertyTypes: [
+        {
+          type: String,
+        },
+      ],
+
+      operatingCities: [
+        {
+          type: String,
+        },
+      ],
+    },
+
+    // ==========================================
+    // VERIFICATION
+    // ==========================================
+
     isEmailVerified: {
       type: Boolean,
       default: false,
@@ -229,16 +461,13 @@ const vendorSchema = new mongoose.Schema(
       default: false,
     },
 
-    // ===========================
-    // Admin Approval
-    // ===========================
+    // ==========================================
+    // ADMIN APPROVAL
+    // ==========================================
+
     status: {
       type: String,
-      enum: [
-        "PENDING",
-        "APPROVED",
-        "REJECTED",
-      ],
+      enum: ["PENDING", "APPROVED", "REJECTED"],
       default: "PENDING",
     },
 
@@ -263,23 +492,19 @@ const vendorSchema = new mongoose.Schema(
       default: "",
     },
 
-    // ===========================
-    // Profile
-    // ===========================
-    profileImage: {
-      type: String,
-      default: "",
-    },
+    // ==========================================
+    // ACCOUNT STATUS
+    // ==========================================
 
-    // ===========================
-    // Account
-    // ===========================
     isActive: {
       type: Boolean,
       default: true,
     },
 
-    lastLogin: Date,
+    lastLogin: {
+      type: Date,
+      default: null,
+    },
 
     refreshToken: {
       type: String,
@@ -290,5 +515,32 @@ const vendorSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+
+// ==========================================
+// INDEXES
+// sparse = empty email/phone par duplicate issue nahi
+// ==========================================
+
+vendorSchema.index(
+  { email: 1 },
+  {
+    unique: true,
+    sparse: true,
+  }
+);
+
+vendorSchema.index(
+  { phone: 1 },
+  {
+    unique: true,
+    sparse: true,
+  }
+);
+
+vendorSchema.index({
+  services: 1,
+});
+
 
 module.exports = mongoose.model("Vendor", vendorSchema);

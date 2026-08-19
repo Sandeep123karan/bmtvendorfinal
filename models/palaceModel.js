@@ -1,80 +1,287 @@
 const mongoose = require("mongoose");
 
-const roomSchema = new mongoose.Schema({
-  roomType: String,
-  price: Number,
-  capacity: Number,
-  available: Boolean,
-  images: [String]   // room images
-});
+const imageSchema = new mongoose.Schema(
+  {
+    url: {
+      type: String,
+      required: true,
+    },
+    publicId: {
+      type: String,
+      default: "",
+    },
+  },
+  { _id: false }
+);
 
 const palaceSchema = new mongoose.Schema(
   {
+    // ==========================================
+    // VENDOR OWNER
+    // JWT se automatically aayega
+    // ==========================================
+    vendor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Vendor",
+      required: true,
+      index: true,
+    },
+
+    // ==========================================
+    // BASIC PROPERTY INFORMATION
+    // ==========================================
     propertyName: {
       type: String,
-      required: true
+      required: true,
+      trim: true,
     },
 
-    description: String,
-
-    category: {
+    propertyType: {
       type: String,
-      default: "palace"
+      enum: [
+        "heritage-palace",
+        "luxury-palace",
+        "royal-palace",
+        "heritage-hotel",
+        "fort-palace",
+        "other",
+      ],
+      default: "heritage-palace",
     },
 
-    status: {
+    shortDescription: {
       type: String,
-      enum: ["pending", "approved", "rejected"],
-      default: "pending"
+      default: "",
+      trim: true,
     },
 
-    featured: {
-      type: Boolean,
-      default: false
+    description: {
+      type: String,
+      default: "",
     },
 
-    ownerName: String,
-    email: String,
-    phone: String,
-    password: String,
+    starRating: {
+      type: Number,
+      min: 1,
+      max: 5,
+      default: 3,
+    },
 
-    country: String,
-    state: String,
-    city: String,
-    fullAddress: String,
+    // ==========================================
+    // CONTACT
+    // ==========================================
+    contact: {
+      phone: {
+        type: String,
+        default: "",
+        trim: true,
+      },
 
-    latitude: Number,
-    longitude: Number,
+      alternatePhone: {
+        type: String,
+        default: "",
+        trim: true,
+      },
 
-    totalRooms: Number,
+      email: {
+        type: String,
+        default: "",
+        lowercase: true,
+        trim: true,
+      },
+    },
+
+    // ==========================================
+    // LOCATION
+    // ==========================================
+    address: {
+      addressLine: {
+        type: String,
+        default: "",
+      },
+
+      landmark: {
+        type: String,
+        default: "",
+      },
+
+      city: {
+        type: String,
+        default: "",
+        index: true,
+      },
+
+      state: {
+        type: String,
+        default: "",
+      },
+
+      country: {
+        type: String,
+        default: "India",
+      },
+
+      pincode: {
+        type: String,
+        default: "",
+      },
+
+      latitude: {
+        type: Number,
+        default: null,
+      },
+
+      longitude: {
+        type: Number,
+        default: null,
+      },
+    },
+
+    // ==========================================
+    // PROPERTY DETAILS
+    // ==========================================
+    totalRooms: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
 
     heritageCertified: {
       type: Boolean,
-      default: false
+      default: false,
     },
-
-    /* ===== PALACE IMAGES ===== */
-    images: [String],   // property images
-
-    /* ===== ROOMS ===== */
-    rooms: [roomSchema],
 
     weddingAllowed: {
       type: Boolean,
-      default: false
+      default: false,
     },
 
     eventAllowed: {
       type: Boolean,
-      default: false
+      default: false,
     },
 
-    amenities: [String],
+    // ==========================================
+    // CHECK-IN / CHECK-OUT
+    // ==========================================
+    checkInTime: {
+      type: String,
+      default: "14:00",
+    },
 
-    basePrice: Number,
-    weekendPrice: Number
+    checkOutTime: {
+      type: String,
+      default: "11:00",
+    },
+
+    // ==========================================
+    // AMENITIES
+    // ==========================================
+    amenities: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
+
+    // ==========================================
+    // IMAGES
+    // ==========================================
+    images: [imageSchema],
+
+    coverImage: {
+      url: {
+        type: String,
+        default: "",
+      },
+
+      publicId: {
+        type: String,
+        default: "",
+      },
+    },
+
+    // ==========================================
+    // POLICIES
+    // ==========================================
+    policies: {
+      cancellationPolicy: {
+        type: String,
+        default: "",
+      },
+
+      childPolicy: {
+        type: String,
+        default: "",
+      },
+
+      petPolicy: {
+        type: String,
+        default: "",
+      },
+
+      smokingPolicy: {
+        type: String,
+        default: "",
+      },
+
+      unmarriedCouplesAllowed: {
+        type: Boolean,
+        default: false,
+      },
+
+      localIdAllowed: {
+        type: Boolean,
+        default: false,
+      },
+
+      idProofRequired: {
+        type: Boolean,
+        default: true,
+      },
+    },
+
+    // ==========================================
+    // APPROVAL
+    // ==========================================
+    status: {
+      type: String,
+      enum: [
+        "DRAFT",
+        "PENDING",
+        "APPROVED",
+        "REJECTED",
+        "INACTIVE",
+      ],
+      default: "DRAFT",
+      index: true,
+    },
+
+    rejectionReason: {
+      type: String,
+      default: "",
+    },
+
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+
+    isFeatured: {
+      type: Boolean,
+      default: false,
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
+
+
+// Vendor-wise property listing
+palaceSchema.index({
+  vendor: 1,
+  createdAt: -1,
+});
 
 module.exports = mongoose.model("Palace", palaceSchema);

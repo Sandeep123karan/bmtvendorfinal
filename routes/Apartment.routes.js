@@ -1,6 +1,8 @@
 const express = require("express");
+
 const protect = require("../middleware/auth.middleware");
 const upload = require("../utils/upload");
+
 const {
   createApartment,
   getMyApartments,
@@ -10,15 +12,56 @@ const {
   toggleActiveStatus,
 } = require("../controllers/Apartment.controller");
 
+
 const router = express.Router();
 
+
+// All apartment vendor APIs protected
 router.use(protect);
 
-router.post("/", upload.array("images", 10), createApartment);
-router.get("/", getMyApartments);
-router.get("/:id", getApartmentById);
-router.put("/:id", upload.array("images", 10), updateApartment);
-router.delete("/:id", deleteApartment);
-router.patch("/:id/toggle", toggleActiveStatus);
+
+// CREATE
+router.post(
+  "/",
+  upload.array("images", 10),
+  createApartment
+);
+
+
+// MY APARTMENTS
+router.get(
+  "/",
+  getMyApartments
+);
+
+
+// SINGLE APARTMENT
+router.get(
+  "/:id",
+  getApartmentById
+);
+
+
+// UPDATE
+router.put(
+  "/:id",
+  upload.array("images", 10),
+  updateApartment
+);
+
+
+// DELETE
+router.delete(
+  "/:id",
+  deleteApartment
+);
+
+
+// ACTIVE / INACTIVE
+router.patch(
+  "/:id/toggle",
+  toggleActiveStatus
+);
+
 
 module.exports = router;

@@ -16,6 +16,7 @@ const connectDB = require("./config/db");
 
 // custom routes
 const palaceRoutes = require("./routes/palaceRoutes");
+
 const vacationHouseRoutes = require("./routes/vacationHouseRoutes");
 const motelVendorRoutes = require("./routes/motelVendorRoutes");
 const hotelBookingRoutes = require("./routes/hotelBooking.routes");
@@ -76,10 +77,26 @@ app.use("/api/hotel-inventory", hotelInventoryRoutes);
 // CABS
 app.use("/api/vendor/cabs", require("./routes/cab.routes"));
 app.use("/api/cabs", require("./routes/cabBooking.routes"));
-app.use("/api/vendor/cabs-booking", require("./routes/vendorCabBooking.routes")); // ✅ FIX
+// app.use("/api/vendor/cabs-booking", require("./routes/vendorCabBooking.routes")); // ✅ FIX
 
 // BUS
 app.use("/api/buses", require("./routes/bus.routes"));
+const busSeatLayoutRoutes = require(
+  "./routes/busSeatLayout.routes"
+);
+
+app.use(
+  "/api/bus-seat-layouts",
+  busSeatLayoutRoutes
+);
+const busTripRoutes = require(
+  "./routes/busTrip.routes"
+);
+
+app.use(
+  "/api/bus-trips",
+  busTripRoutes
+);
 app.use("/api/bus-bookings", require("./routes/busBooking.routes"));
 
 // FLIGHT
@@ -102,6 +119,36 @@ app.use("/api/vendor/apartment", require("./routes/Apartment.routes"));
 // CUSTOM
 app.use("/api/vacation-house", vacationHouseRoutes);
 app.use("/api/palaces", palaceRoutes);
+const palaceRoomCategoryRoutes = require("./routes/palaceRoomCategoryRoutes");
+app.use(
+  "/api/palace-room-categories",
+  palaceRoomCategoryRoutes
+);
+const palaceRoomUnitRoutes = require(
+  "./routes/palaceRoomUnitRoutes"
+);
+
+app.use(
+  "/api/palace-room-units",
+  palaceRoomUnitRoutes
+);
+const palaceRatePlanRoutes = require(
+  "./routes/palaceRatePlanRoutes"
+);
+
+app.use(
+  "/api/palace-rate-plans",
+  palaceRatePlanRoutes
+);
+const palaceInventoryRoutes =
+  require("./routes/palaceInventoryRoutes");
+
+app.use(
+  "/api/palace-inventory",
+  palaceInventoryRoutes
+);
+
+
 app.use("/api/motel-vendors", motelVendorRoutes);
 const homestayUnitRoutes = require("./routes/homestayUnit.routes");
 
@@ -119,9 +166,91 @@ app.use(
 );
 const homestayReviewRoutes = require("./routes/homestayReview.routes");
 app.use("/api/homestay-reviews", homestayReviewRoutes);
-
+const resortRoutes = require("./routes/resort.routes");
+app.use("/api/resorts", resortRoutes);
 const campsiteRoutes = require("./routes/vendorCampsite.routes");
+const resortRoomRoutes = require("./routes/resortRoom.routes");
+app.use("/api/resort-rooms", resortRoomRoutes);
+const resortRoomUnitRoutes = require("./routes/resortRoomUnit.routes");
 
+app.use(
+  "/api/resort-room-units",
+  resortRoomUnitRoutes
+);
+const resortInventoryRoutes = require(
+  "./routes/resortInventory.routes"
+);
+
+app.use(
+  "/api/resort-inventory",
+  resortInventoryRoutes
+);
+const resortRatePlanRoutes = require(
+  "./routes/resortRatePlan.routes"
+);
+
+const resortPricingRoutes = require(
+  "./routes/resortPricing.routes"
+);
+
+
+app.use(
+  "/api/resort-rate-plans",
+  resortRatePlanRoutes
+);
+
+app.use(
+  "/api/resort-pricing",
+  resortPricingRoutes
+);
+const resortBookingRoutes = require(
+  "./routes/resortBooking.routes"
+);
+
+app.use(
+  "/api/resort-bookings",
+  resortBookingRoutes
+);
+const resortReviewRoutes = require(
+  "./routes/resortReview.routes"
+);
+
+app.use(
+  "/api/resort-reviews",
+  resortReviewRoutes
+);
+const apartmentInventoryRoutes = require(
+  "./routes/apartmentInventory.routes"
+);
+
+app.use(
+  "/api/apartment-inventory",
+  apartmentInventoryRoutes
+);
+const apartmentRatePlanRoutes = require(
+  "./routes/apartmentRatePlan.routes"
+);
+
+app.use(
+  "/api/apartment-rate-plans",
+  apartmentRatePlanRoutes
+);
+const apartmentDynamicPricingRoutes = require(
+  "./routes/apartmentDynamicPricing.routes"
+);
+
+app.use(
+  "/api/apartment-dynamic-pricing",
+  apartmentDynamicPricingRoutes
+);
+const apartmentBookingRoutes = require(
+  "./routes/apartmentBooking.routes"
+);
+
+app.use(
+  "/api/apartment-bookings",
+  apartmentBookingRoutes
+);
 app.use("/api/vendor/campsite", campsiteRoutes);
 /* ==============================
    ❤️ HEALTH CHECK

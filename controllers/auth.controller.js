@@ -1,108 +1,543 @@
 const Vendor = require("../models/Vendor.model");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const uploadToCloudinary = require("../utils/uploadToCloudinary");
+
+
+/* ==========================================================
+                    HELPER FUNCTIONS
+========================================================== */
+
+// Convert value to array
+const parseArray = (value) => {
+  if (!value) return [];
+
+  if (Array.isArray(value)) return value;
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch (error) {
+      // normal comma separated string
+      return value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+};
+
+
+// Convert object/string JSON
+const parseObject = (value, fallback = {}) => {
+  if (!value) return fallback;
+
+  if (typeof value === "object") {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    return fallback;
+  }
+};
+
+
+// Boolean helper
+const parseBoolean = (value, defaultValue = false) => {
+  if (value === undefined || value === null || value === "") {
+    return defaultValue;
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  return String(value).toLowerCase() === "true";
+};
+
+
 /* ==========================================================
                     VENDOR SIGNUP
+       SINGLE REGISTER PAGE - MULTIPLE SERVICES
+       NO FIELD MANDATORY
 ========================================================== */
 
 exports.signup = async (req, res) => {
   try {
-    const {
-      name,
-      email,
-      phone,
-      password,
-      service,
-      companyName,
-      gstNumber,
-      panNumber,
-      address,
-      city,
-      state,
-      pincode,
-    } = req.body;
+    const body = req.body || {};
 
-    /* ---------------- Validation ---------------- */
 
-    if (!name || !email || !phone || !password || !service) {
-      return res.status(400).json({
-        success: false,
-        message: "All required fields are mandatory.",
-      });
+    /* ======================================================
+                    BASIC VALUES
+    ====================================================== */
+
+    const name = body.name?.trim() || "";
+
+    const email = body.email
+      ? body.email.toLowerCase().trim()
+      : "";
+
+    const phone = body.phone?.trim() || "";
+
+    const password = body.password || "";
+
+
+    /* ======================================================
+                    SERVICES
+
+      Supports:
+      services: ["hotel", "car-rental", "bus"]
+
+      OR
+
+      services: '["hotel","car-rental","bus"]'
+
+      OR
+
+      services: "hotel,car-rental,bus"
+
+      OR old service: "hotel"
+    ====================================================== */
+
+    let services = parseArray(body.services);
+
+    // Backward compatibility with old `service`
+    if (services.length === 0 && body.service) {
+      services = [body.service];
     }
 
-    /* ---------------- Email Exists ---------------- */
+    // Remove empty + duplicate services
+    services = [
+      ...new Set(
+        services
+          .map((item) => String(item).trim())
+          .filter(Boolean)
+      ),
+    ];
 
-    const emailExists = await Vendor.findOne({ email });
 
-    if (emailExists) {
-      return res.status(400).json({
-        success: false,
-        message: "Email already registered.",
-      });
+    /* ======================================================
+                    EMAIL CHECK
+      Only check if email is actually provided
+    ====================================================== */
+
+    if (email) {
+      const emailExists = await Vendor.findOne({ email });
+
+      if (emailExists) {
+        return res.status(400).json({
+          success: false,
+          message: "Email already registered.",
+        });
+      }
     }
 
-    /* ---------------- Phone Exists ---------------- */
 
-    const phoneExists = await Vendor.findOne({ phone });
+    /* ======================================================
+                    PHONE CHECK
+      Only check if phone is actually provided
+    ====================================================== */
 
-    if (phoneExists) {
-      return res.status(400).json({
-        success: false,
-        message: "Phone number already registered.",
-      });
+    if (phone) {
+      const phoneExists = await Vendor.findOne({ phone });
+
+      if (phoneExists) {
+        return res.status(400).json({
+          success: false,
+          message: "Phone number already registered.",
+        });
+      }
     }
 
-    /* ---------------- Password ---------------- */
 
-    if (password.length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: "Password must be at least 6 characters.",
-      });
+    /* ======================================================
+                    PASSWORD
+      Optional according to your requirement.
+
+      If password comes, hash it.
+      If empty, store empty string.
+    ====================================================== */
+
+    let hashedPassword = "";
+
+    if (password) {
+      if (password.length < 6) {
+        return res.status(400).json({
+          success: false,
+          message: "Password must be at least 6 characters.",
+        });
+      }
+
+      hashedPassword = await bcrypt.hash(password, 10);
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
 
-    /* ---------------- Create Vendor ---------------- */
+    /* ======================================================
+                    SERVICE DETAILS
+
+      JSON can come from frontend as:
+      carRentalDetails: {...}
+      busDetails: {...}
+      stayDetails: {...}
+    ====================================================== */
+
+    const carRentalInput = parseObject(
+      body.carRentalDetails,
+      {}
+    );
+
+    const busInput = parseObject(
+      body.busDetails,
+      {}
+    );
+
+    const stayInput = parseObject(
+      body.stayDetails,
+      {}
+    );
+
+
+    /* ======================================================
+                    CREATE VENDOR
+    ====================================================== */
 
     const vendor = await Vendor.create({
+
+      // ==========================================
+      // BASIC
+      // ==========================================
+
       name,
+
       email,
+
       phone,
+
       password: hashedPassword,
 
-      service,
+      profileImage: body.profileImage || "",
 
-      companyName,
 
-      gstNumber,
+      // ==========================================
+      // SERVICES
+      // ==========================================
 
-      panNumber,
+      services,
 
-      address,
+      // Old code compatibility
+      service: body.service || services[0] || "",
 
-      city,
 
-      state,
+      // ==========================================
+      // COMPANY DETAILS
+      // ==========================================
 
-      pincode,
+      companyName: body.companyName || "",
+
+      businessName: body.businessName || "",
+
+      legalBusinessName:
+        body.legalBusinessName || "",
+
+      businessType: body.businessType || "",
+
+
+      // ==========================================
+      // BUSINESS CONTACT
+      // ==========================================
+
+      businessEmail:
+        body.businessEmail || "",
+
+      businessPhone:
+        body.businessPhone || "",
+
+      alternatePhone:
+        body.alternatePhone || "",
+
+      website:
+        body.website || "",
+
+
+      // ==========================================
+      // ADDRESS
+      // ==========================================
+
+      address:
+        body.address || "",
+
+      addressLine1:
+        body.addressLine1 || "",
+
+      addressLine2:
+        body.addressLine2 || "",
+
+      landmark:
+        body.landmark || "",
+
+      city:
+        body.city || "",
+
+      state:
+        body.state || "",
+
+      country:
+        body.country || "India",
+
+      pincode:
+        body.pincode || "",
+
+
+      // ==========================================
+      // GST
+      // ==========================================
+
+      gstNumber:
+        body.gstNumber || "",
+
+      gstRegistrationNumber:
+        body.gstRegistrationNumber || "",
+
+      gstCertificate:
+        body.gstCertificate || "",
+
+
+      // ==========================================
+      // PAN
+      // ==========================================
+
+      panNumber:
+        body.panNumber || "",
+
+      panCardNumber:
+        body.panCardNumber || "",
+
+      panCard:
+        body.panCard || "",
+
+
+      // ==========================================
+      // AADHAAR
+      // ==========================================
+
+      aadharNumber:
+        body.aadharNumber || "",
+
+      aadharFront:
+        body.aadharFront || "",
+
+      aadharBack:
+        body.aadharBack || "",
+
+
+      // ==========================================
+      // BANK DETAILS
+      // ==========================================
+
+      accountHolderName:
+        body.accountHolderName || "",
+
+      bankName:
+        body.bankName || "",
+
+      branchName:
+        body.branchName || "",
+
+      accountNumber:
+        body.accountNumber || "",
+
+      confirmAccountNumber:
+        body.confirmAccountNumber || "",
+
+      ifscCode:
+        body.ifscCode || "",
+
+      cancelledCheque:
+        body.cancelledCheque || "",
+
+      passbookImage:
+        body.passbookImage || "",
+
+
+      // ==========================================
+      // CAR RENTAL DETAILS
+      // ==========================================
+
+      carRentalDetails: {
+
+        businessModel:
+          carRentalInput.businessModel ||
+          body.carRentalBusinessModel ||
+          "",
+
+        totalVehicles: Number(
+          carRentalInput.totalVehicles ??
+          body.totalVehicles ??
+          0
+        ),
+
+        vehicleTypes: parseArray(
+          carRentalInput.vehicleTypes ||
+          body.vehicleTypes
+        ),
+
+        serviceCities: parseArray(
+          carRentalInput.serviceCities ||
+          body.serviceCities
+        ),
+
+        airportPickupAvailable: parseBoolean(
+          carRentalInput.airportPickupAvailable ??
+          body.airportPickupAvailable
+        ),
+
+        outstationAvailable: parseBoolean(
+          carRentalInput.outstationAvailable ??
+          body.outstationAvailable
+        ),
+
+        localRentalAvailable: parseBoolean(
+          carRentalInput.localRentalAvailable ??
+          body.localRentalAvailable
+        ),
+
+        driverProvided: parseBoolean(
+          carRentalInput.driverProvided ??
+          body.driverProvided
+        ),
+
+        selfDriveAvailable: parseBoolean(
+          carRentalInput.selfDriveAvailable ??
+          body.selfDriveAvailable
+        ),
+
+        transportLicenseNumber:
+          carRentalInput.transportLicenseNumber ||
+          body.transportLicenseNumber ||
+          "",
+
+        licenseDocument:
+          carRentalInput.licenseDocument ||
+          body.licenseDocument ||
+          "",
+      },
+
+
+      // ==========================================
+      // BUS DETAILS
+      // ==========================================
+
+      busDetails: {
+
+        operatorName:
+          busInput.operatorName ||
+          body.operatorName ||
+          "",
+
+        totalBuses: Number(
+          busInput.totalBuses ??
+          body.totalBuses ??
+          0
+        ),
+
+        busTypes: parseArray(
+          busInput.busTypes ||
+          body.busTypes
+        ),
+
+        operatingCities: parseArray(
+          busInput.operatingCities ||
+          body.busOperatingCities
+        ),
+
+        routes: parseArray(
+          busInput.routes ||
+          body.busRoutes
+        ),
+
+        transportPermitNumber:
+          busInput.transportPermitNumber ||
+          body.transportPermitNumber ||
+          "",
+
+        transportPermitDocument:
+          busInput.transportPermitDocument ||
+          body.transportPermitDocument ||
+          "",
+
+        operatorLicenseNumber:
+          busInput.operatorLicenseNumber ||
+          body.operatorLicenseNumber ||
+          "",
+
+        operatorLicenseDocument:
+          busInput.operatorLicenseDocument ||
+          body.operatorLicenseDocument ||
+          "",
+      },
+
+
+      // ==========================================
+      // HOTEL / STAY DETAILS
+      // ==========================================
+
+      stayDetails: {
+
+        totalProperties: Number(
+          stayInput.totalProperties ??
+          body.totalProperties ??
+          0
+        ),
+
+        propertyTypes: parseArray(
+          stayInput.propertyTypes ||
+          body.propertyTypes
+        ),
+
+        operatingCities: parseArray(
+          stayInput.operatingCities ||
+          body.stayOperatingCities
+        ),
+      },
+
+
+      // ==========================================
+      // VERIFICATION / APPROVAL
+      // ==========================================
+
+      isEmailVerified: false,
+
+      isPhoneVerified: false,
 
       status: "PENDING",
 
       isApproved: false,
 
-      isEmailVerified: false,
-
-      isPhoneVerified: false,
+      isActive: true,
     });
+
+
+    /* ======================================================
+                    RESPONSE
+    ====================================================== */
 
     return res.status(201).json({
       success: true,
 
       message:
-        "Signup successful. Your account is waiting for admin approval.",
+        "Vendor registration successful. Your account is waiting for admin approval.",
 
       vendor: {
         id: vendor._id,
@@ -115,39 +550,76 @@ exports.signup = async (req, res) => {
 
         service: vendor.service,
 
+        services: vendor.services,
+
+        companyName: vendor.companyName,
+
+        businessName: vendor.businessName,
+
         status: vendor.status,
+
+        isApproved: vendor.isApproved,
+
+        createdAt: vendor.createdAt,
       },
     });
+
   } catch (error) {
-    console.error(error);
+
+    console.error(
+      "❌ Vendor Signup Error:",
+      error
+    );
+
+    // Mongo duplicate error fallback
+    if (error.code === 11000) {
+
+      const field = Object.keys(
+        error.keyPattern || {}
+      )[0] || "field";
+
+      return res.status(400).json({
+        success: false,
+        message: `${field} already exists.`,
+      });
+    }
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message ||
+        "Vendor registration failed.",
     });
   }
-};/* ==========================================================
+};
+
+
+/* ==========================================================
                     VENDOR LOGIN
 ========================================================== */
 
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
 
-    /* ---------------- Validation ---------------- */
+    const email = req.body.email
+      ? req.body.email.toLowerCase().trim()
+      : "";
 
+    const password = req.body.password || "";
+
+
+    // Login ke liye email/password required rahenge
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-        message: "Email and password are required.",
+        message:
+          "Email and password are required for login.",
       });
     }
 
-    /* ---------------- Find Vendor ---------------- */
 
-    const vendor = await Vendor.findOne({
-      email: email.toLowerCase(),
-    });
+    const vendor = await Vendor.findOne({ email });
+
 
     if (!vendor) {
       return res.status(404).json({
@@ -156,7 +628,18 @@ exports.login = async (req, res) => {
       });
     }
 
-    /* ---------------- Pending Approval ---------------- */
+
+    // Password empty account
+    if (!vendor.password) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Password is not set for this vendor account.",
+      });
+    }
+
+
+    /* ---------------- PENDING ---------------- */
 
     if (vendor.status === "PENDING") {
       return res.status(403).json({
@@ -166,7 +649,8 @@ exports.login = async (req, res) => {
       });
     }
 
-    /* ---------------- Rejected ---------------- */
+
+    /* ---------------- REJECTED ---------------- */
 
     if (vendor.status === "REJECTED") {
       return res.status(403).json({
@@ -177,28 +661,48 @@ exports.login = async (req, res) => {
       });
     }
 
-    /* ---------------- Account Active ---------------- */
+
+    /* ---------------- APPROVED CHECK ---------------- */
+
+    if (
+      vendor.status !== "APPROVED" ||
+      !vendor.isApproved
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Your vendor account is not approved.",
+      });
+    }
+
+
+    /* ---------------- ACTIVE CHECK ---------------- */
 
     if (!vendor.isActive) {
       return res.status(403).json({
         success: false,
-        message: "Your account has been disabled.",
+        message:
+          "Your account has been disabled.",
       });
     }
 
-    /* ---------------- Password ---------------- */
+
+    /* ---------------- PASSWORD CHECK ---------------- */
 
     const isMatch = await bcrypt.compare(
       password,
       vendor.password
     );
 
+
     if (!isMatch) {
       return res.status(400).json({
         success: false,
-        message: "Invalid email or password.",
+        message:
+          "Invalid email or password.",
       });
     }
+
 
     /* ---------------- JWT ---------------- */
 
@@ -206,7 +710,12 @@ exports.login = async (req, res) => {
       {
         id: vendor._id,
         email: vendor.email,
+
+        // old code
         service: vendor.service,
+
+        // new multiple services
+        services: vendor.services,
       },
       process.env.JWT_SECRET,
       {
@@ -214,19 +723,17 @@ exports.login = async (req, res) => {
       }
     );
 
-    /* ---------------- Update Last Login ---------------- */
+
+    /* ---------------- LAST LOGIN ---------------- */
 
     vendor.lastLogin = new Date();
 
     await vendor.save();
 
-    /* ---------------- Response ---------------- */
 
     return res.status(200).json({
       success: true,
-
       message: "Login successful.",
-
       token,
 
       vendor: {
@@ -234,15 +741,26 @@ exports.login = async (req, res) => {
         name: vendor.name,
         email: vendor.email,
         phone: vendor.phone,
+
         service: vendor.service,
+        services: vendor.services,
+
         companyName: vendor.companyName,
+        businessName: vendor.businessName,
+
         profileImage: vendor.profileImage,
+
         status: vendor.status,
         isApproved: vendor.isApproved,
       },
     });
+
   } catch (error) {
-    console.error(error);
+
+    console.error(
+      "❌ Vendor Login Error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -250,6 +768,8 @@ exports.login = async (req, res) => {
     });
   }
 };
+
+
 /* ==========================================================
                 GET ALL PENDING VENDORS
 ========================================================== */
@@ -260,8 +780,9 @@ exports.getPendingVendors = async (req, res) => {
     const vendors = await Vendor.find({
       status: "PENDING",
     })
-      .select("-password")
+      .select("-password -refreshToken")
       .sort({ createdAt: -1 });
+
 
     return res.status(200).json({
       success: true,
@@ -271,184 +792,119 @@ exports.getPendingVendors = async (req, res) => {
 
   } catch (error) {
 
-    console.error(error);
+    console.error(
+      "❌ Get Pending Vendors Error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
       message: error.message,
     });
-
   }
 };
 
 
 /* ==========================================================
-                  APPROVE VENDOR
+                    APPROVE VENDOR
 ========================================================== */
 
 exports.approveVendor = async (req, res) => {
-
   try {
 
-    const vendor = await Vendor.findById(req.params.id);
+    const vendor = await Vendor.findById(
+      req.params.id
+    );
+
 
     if (!vendor) {
-
       return res.status(404).json({
         success: false,
         message: "Vendor not found.",
       });
-
     }
 
-    if (vendor.status === "APPROVED") {
-
-      return res.status(400).json({
-        success: false,
-        message: "Vendor already approved.",
-      });
-
-    }
 
     vendor.status = "APPROVED";
-
     vendor.isApproved = true;
-
     vendor.approvedAt = new Date();
+    vendor.rejectionReason = "";
 
-    if (req.admin) {
+
+    if (req.admin?._id) {
       vendor.approvedBy = req.admin._id;
     }
 
+
     await vendor.save();
 
+
     return res.status(200).json({
-
       success: true,
-
       message: "Vendor approved successfully.",
-
       vendor,
-
     });
 
   } catch (error) {
 
-    console.error(error);
+    console.error(
+      "❌ Approve Vendor Error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
       message: error.message,
     });
-
   }
-
 };
 
 
 /* ==========================================================
-                  REJECT VENDOR
+                    REJECT VENDOR
 ========================================================== */
 
 exports.rejectVendor = async (req, res) => {
-
   try {
 
     const { rejectionReason } = req.body;
 
-    const vendor = await Vendor.findById(req.params.id);
+
+    const vendor = await Vendor.findById(
+      req.params.id
+    );
+
 
     if (!vendor) {
-
       return res.status(404).json({
         success: false,
         message: "Vendor not found.",
       });
-
     }
 
+
     vendor.status = "REJECTED";
-
     vendor.isApproved = false;
-
     vendor.rejectionReason =
       rejectionReason || "Rejected by admin.";
 
+
     await vendor.save();
 
+
     return res.status(200).json({
-
       success: true,
-
       message: "Vendor rejected successfully.",
-
-      vendor,
-
-    });
-
-  } catch (error) {
-
-    console.error(error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-
-  }
-
-};/* ==========================================================
-                  GET VENDOR PROFILE
-========================================================== */
-
-// exports.getVendorProfile = async (req, res) => {
-//   try {
-//     const vendor = await Vendor.findById(req.vendor._id).select(
-//       "-password -refreshToken"
-//     );
-
-//     if (!vendor) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Vendor not found.",
-//       });
-//     }
-
-//     return res.status(200).json({
-//       success: true,
-//       message: "Vendor profile fetched successfully.",
-//       vendor,
-//     });
-//   } catch (error) {
-//     console.error("Get Vendor Profile Error:", error);
-
-//     return res.status(500).json({
-//       success: false,
-//       message: error.message,
-//     });
-//   }
-// };
-
-
-exports.getVendorProfile = async (req, res) => {
-  try {
-    const vendor = await Vendor.findById(req.vendor._id)
-      .select("-password -refreshToken");
-
-    if (!vendor) {
-      return res.status(404).json({
-        success: false,
-        message: "Vendor not found",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Vendor profile fetched successfully",
       vendor,
     });
 
   } catch (error) {
+
+    console.error(
+      "❌ Reject Vendor Error:",
+      error
+    );
+
     return res.status(500).json({
       success: false,
       message: error.message,
@@ -457,245 +913,43 @@ exports.getVendorProfile = async (req, res) => {
 };
 
 
-// const Vendor = require("../models/Vendor.model");
-// const bcrypt = require("bcryptjs");
-// const jwt = require("jsonwebtoken");
-// const uploadToCloudinary = require("../utils/uploadToCloudinary");
+/* ==========================================================
+                    GET VENDOR PROFILE
+========================================================== */
 
-// /* ==========================================================
-//                     VENDOR SIGNUP
-// ========================================================== */
+exports.getVendorProfile = async (req, res) => {
+  try {
 
-// exports.signup = async (req, res) => {
-//   try {
-//     const {
-//       name,
-//       email,
-//       phone,
-//       password,
-//       service,
+    const vendor = await Vendor.findById(
+      req.vendor._id
+    ).select("-password -refreshToken");
 
-//       companyName,
-//       gstNumber,
-//       panNumber,
 
-//       address,
-//       city,
-//       state,
-//       pincode,
+    if (!vendor) {
+      return res.status(404).json({
+        success: false,
+        message: "Vendor not found.",
+      });
+    }
 
-//       aadharNumber,
 
-//       accountHolderName,
-//       bankName,
-//       accountNumber,
-//       ifscCode,
-//     } = req.body;
+    return res.status(200).json({
+      success: true,
+      message:
+        "Vendor profile fetched successfully.",
+      vendor,
+    });
 
-//     /* =====================================================
-//                     REQUIRED VALIDATION
-//     ====================================================== */
+  } catch (error) {
 
-//     if (
-//       !name ||
-//       !email ||
-//       !phone ||
-//       !password ||
-//       !service
-//     ) {
-//       return res.status(400).json({
-//         success: false,
-//         message:
-//           "Name, Email, Phone, Password and Service are required.",
-//       });
-//     }
+    console.error(
+      "❌ Get Vendor Profile Error:",
+      error
+    );
 
-//     /* =====================================================
-//                     EMAIL VALIDATION
-//     ====================================================== */
-
-//     const emailRegex =
-//       /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-//     if (!emailRegex.test(email)) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Invalid email format.",
-//       });
-//     }
-
-//     /* =====================================================
-//                     PHONE VALIDATION
-//     ====================================================== */
-
-//     if (!/^[6-9]\d{9}$/.test(phone)) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Invalid phone number.",
-//       });
-//     }
-
-//     /* =====================================================
-//                     PASSWORD VALIDATION
-//     ====================================================== */
-
-//     if (password.length < 6) {
-//       return res.status(400).json({
-//         success: false,
-//         message:
-//           "Password must be at least 6 characters.",
-//       });
-//     }
-
-//     /* =====================================================
-//                     CHECK EMAIL
-//     ====================================================== */
-
-//     const emailExist = await Vendor.findOne({
-//       email: email.toLowerCase(),
-//     });
-
-//     if (emailExist) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Email already registered.",
-//       });
-//     }
-
-//     /* =====================================================
-//                     CHECK PHONE
-//     ====================================================== */
-
-//     const phoneExist = await Vendor.findOne({
-//       phone,
-//     });
-
-//     if (phoneExist) {
-//       return res.status(400).json({
-//         success: false,
-//         message:
-//           "Phone number already registered.",
-//       });
-//     }
-
-//     /* =====================================================
-//                     HASH PASSWORD
-//     ====================================================== */
-
-//     const hashedPassword = await bcrypt.hash(
-//       password,
-//       10
-//     );
-
-//     /* =====================================================
-//               IMAGE VARIABLES (Cloudinary)
-//     ====================================================== */
-
-//     let profileImage = "";
-
-//     let aadharFront = "";
-
-//     let aadharBack = "";
-
-//     let panCard = "";
-
-//     let gstCertificate = "";
-
-//     let cancelledCheque = "";
-
-//     let passbookImage = "";
-
-//     // ==========================================
-//     // PART-2 se yahin se continue hoga...
-//     // Cloudinary Upload Logic
-//     // ==========================================
-
-//   } catch (error) {
-//     console.log("Signup Error :", error);
-
-//     return res.status(500).json({
-//       success: false,
-//       message: error.message,
-//     });
-//   }
-// };/* =====================================================
-//             PROFILE IMAGE
-// ===================================================== */
-
-// if (req.files?.profileImage?.[0]) {
-//   profileImage = await uploadToCloudinary(
-//     req.files.profileImage[0].buffer,
-//     "vendors/profile"
-//   );
-// }
-
-// /* =====================================================
-//             AADHAAR FRONT
-// ===================================================== */
-
-// if (req.files?.aadharFront?.[0]) {
-//   aadharFront = await uploadToCloudinary(
-//     req.files.aadharFront[0].buffer,
-//     "vendors/aadhar"
-//   );
-// }
-
-// /* =====================================================
-//             AADHAAR BACK
-// ===================================================== */
-
-// if (req.files?.aadharBack?.[0]) {
-//   aadharBack = await uploadToCloudinary(
-//     req.files.aadharBack[0].buffer,
-//     "vendors/aadhar"
-//   );
-// }
-
-// /* =====================================================
-//             PAN CARD
-// ===================================================== */
-
-// if (req.files?.panCard?.[0]) {
-//   panCard = await uploadToCloudinary(
-//     req.files.panCard[0].buffer,
-//     "vendors/pan"
-//   );
-// }
-
-// /* =====================================================
-//             GST CERTIFICATE
-// ===================================================== */
-
-// if (req.files?.gstCertificate?.[0]) {
-//   gstCertificate = await uploadToCloudinary(
-//     req.files.gstCertificate[0].buffer,
-//     "vendors/gst"
-//   );
-// }
-
-// /* =====================================================
-//             CANCELLED CHEQUE
-// ===================================================== */
-
-// if (req.files?.cancelledCheque?.[0]) {
-//   cancelledCheque = await uploadToCloudinary(
-//     req.files.cancelledCheque[0].buffer,
-//     "vendors/bank"
-//   );
-// }
-
-// /* =====================================================
-//             PASSBOOK IMAGE
-// ===================================================== */
-
-// if (req.files?.passbookImage?.[0]) {
-//   passbookImage = await uploadToCloudinary(
-//     req.files.passbookImage[0].buffer,
-//     "vendors/bank"
-//   );
-// }
-
-// /* =====================================================
-//         PART-3 SE CONTINUE HOGA...
-//         Vendor Create + JWT + Response
-// ===================================================== */
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
