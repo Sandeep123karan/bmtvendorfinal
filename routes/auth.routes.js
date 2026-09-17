@@ -1,7 +1,16 @@
 const express = require("express");
+
 const router = express.Router();
 
+/* ==========================================================
+   MIDDLEWARE
+========================================================== */
+
 const protect = require("../middleware/auth.middleware");
+
+/* ==========================================================
+   CONTROLLER
+========================================================== */
 
 const {
   signup,
@@ -10,70 +19,99 @@ const {
   approveVendor,
   rejectVendor,
   getVendorProfile,
+  getAllVendors,
 } = require("../controllers/auth.controller");
 
-
-/* ==========================================
-   VENDOR AUTH / REGISTRATION
-========================================== */
-
-/*
-  Common Registration for:
-  - Car Rental Vendor
-  - Bus Operator
-  - Other Vendor Services
-
-  POST /api/vendor/auth/signup
-*/
-router.post("/signup", signup);
-
+/* ==========================================================
+   PUBLIC AUTH ROUTES
+========================================================== */
 
 /*
-  Vendor Login
-
-  POST /api/vendor/auth/login
+  POST
+  /api/vendor/auth/signup
 */
-router.post("/login", login);
+router.post(
+  "/signup",
+  signup
+);
 
+/*
+  POST
+  /api/vendor/auth/login
+*/
+router.post(
+  "/login",
+  login
+);
 
-/* ==========================================
+/* ==========================================================
    VENDOR PROFILE
-========================================== */
+========================================================== */
 
 /*
-  Get logged-in vendor profile
+  GET
+  /api/vendor/auth/profile
 
-  GET /api/vendor/auth/profile
+  Token required.
 */
-router.get("/profile", protect, getVendorProfile);
+router.get(
+  "/profile",
+  protect,
+  getVendorProfile
+);
 
+/* ==========================================================
+   ADMIN / MANAGEMENT ROUTES
 
-/* ==========================================
-   ADMIN - VENDOR APPROVAL
-========================================== */
+   IMPORTANT:
+   Abhi inko kam se kam authentication ke peeche rakha hai.
 
-/*
-  Get all pending vendors
+   Next step me proper admin-role middleware lagayenge,
+   taki normal vendor approve/reject na kar sake.
+========================================================== */
 
-  GET /api/vendor/auth/pending-vendors
-*/
-router.get("/pending-vendors", getPendingVendors);
+/* ==============================
+   GET ALL VENDORS
+============================== */
 
+router.get(
+  "/vendors",
 
-/*
-  Approve vendor
+  getAllVendors
+);
 
-  PUT /api/vendor/auth/approve-vendor/:id
-*/
-router.put("/approve-vendor/:id", approveVendor);
+/* ==============================
+   GET PENDING VENDORS
+============================== */
 
+router.get(
+  "/pending-vendors",
+  
+  getPendingVendors
+);
 
-/*
-  Reject vendor
+/* ==============================
+   APPROVE VENDOR
+============================== */
 
-  PUT /api/vendor/auth/reject-vendor/:id
-*/
-router.put("/reject-vendor/:id", rejectVendor);
+router.put(
+  "/approve-vendor/:id",
+ 
+  approveVendor
+);
 
+/* ==============================
+   REJECT VENDOR
+============================== */
+
+router.put(
+  "/reject-vendor/:id",
+  protect,
+  rejectVendor
+);
+
+/* ==========================================================
+   EXPORT
+========================================================== */
 
 module.exports = router;

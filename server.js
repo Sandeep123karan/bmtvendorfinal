@@ -39,8 +39,9 @@ app.use(morgan("dev"));
 app.use(
   cors({
     origin: [
-      "http://localhost:3000",
+      "http://localhost:3001",
       "http://localhost:7000",
+      "http://localhost:3000",
     ],
     credentials: true,
   })
@@ -73,7 +74,9 @@ const hotelInventoryRoutes = require("./routes/HotelInventory.routes");
 
 app.use("/api/hotel-inventory", hotelInventoryRoutes);
 
+const nightclubRoutes = require("./routes/nightclub.routes");
 
+app.use("/api/nightclubs", nightclubRoutes);
 // CABS
 app.use("/api/vendor/cabs", require("./routes/cab.routes"));
 app.use("/api/cabs", require("./routes/cabBooking.routes"));
@@ -126,6 +129,12 @@ app.use(
 );
 const palaceRoomUnitRoutes = require(
   "./routes/palaceRoomUnitRoutes"
+);
+app.use(
+  "/api/bmt-partner/auth",
+  require(
+    "./routes/bmtPartnerAuth.routes"
+  )
 );
 
 app.use(

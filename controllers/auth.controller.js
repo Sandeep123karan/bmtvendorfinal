@@ -2,224 +2,1109 @@ const Vendor = require("../models/Vendor.model");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-
 /* ==========================================================
-                    HELPER FUNCTIONS
+   BMT CONNECT - VENDOR AUTH CONTROLLER
+   ==========================================================
+
+   FINAL FLOW:
+
+   Partner Auth
+      ↓
+   /onboarding
+      ↓
+   Vendor Signup
+      ↓
+   PENDING ADMIN APPROVAL
+      ↓
+   Admin Approves
+      ↓
+   Vendor Sign In
+      ↓
+   Exact dashboard from MongoDB
+
+   Stay + Hotel     -> /vendor/stay/hotel
+   Stay + Homestay  -> /vendor/stay/homestay
+   Stay + Resort    -> /vendor/stay/resort
+   Stay + Villa     -> /vendor/stay/villa
+
+   Bus              -> /vendor/bus
+   Cab              -> /vendor/cab
+   Packages         -> /vendor/packages
+   Activities       -> /vendor/activities
+   Events           -> /vendor/events
+   Darshan          -> /vendor/darshan
+   Cruise           -> /vendor/cruise
 ========================================================== */
 
-// Convert value to array
-const parseArray = (value) => {
-  if (!value) return [];
 
-  if (Array.isArray(value)) return value;
+/* ==========================================================
+   CONSTANTS
+========================================================== */
 
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
+const MAIN_VERTICALS = [
+  "stay",
+  "bus",
+  "cab",
+  "packages",
+  "activities",
+  "events",
+  "darshan",
+  "cruise",
+];
 
-      if (Array.isArray(parsed)) {
-        return parsed;
-      }
-    } catch (error) {
-      // normal comma separated string
-      return value
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-    }
+const STAY_SUBTYPES = [
+  "hotel",
+  "homestay",
+  "resort",
+  "villa",
+  "apartment",
+  "guesthouse",
+  "hostel",
+  "camp",
+  "campsite",
+  "farmhouse",
+  "vacation-home",
+  "palace",
+  "motel",
+  "bnb",
+  "lodge",
+  "inn",
+  "serviced-apartment",
+];
 
-    return value
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
+
+/* ==========================================================
+   BASIC HELPERS
+========================================================== */
+
+const normalizeString = (value) => {
+  if (value === undefined || value === null) {
+    return "";
   }
 
-  return [];
+  return String(value).trim();
 };
 
 
-// Convert object/string JSON
-const parseObject = (value, fallback = {}) => {
-  if (!value) return fallback;
-
-  if (typeof value === "object") {
-    return value;
-  }
-
-  try {
-    return JSON.parse(value);
-  } catch (error) {
-    return fallback;
-  }
+const normalizeEmail = (value) => {
+  return normalizeString(value).toLowerCase();
 };
 
 
-// Boolean helper
-const parseBoolean = (value, defaultValue = false) => {
-  if (value === undefined || value === null || value === "") {
-    return defaultValue;
-  }
+const normalizePhone = (value) => {
+  return normalizeString(value).replace(/[^\d+]/g, "");
+};
 
-  if (typeof value === "boolean") {
-    return value;
-  }
 
-  return String(value).toLowerCase() === "true";
+const normalizeSlug = (value) => {
+  return normalizeString(value)
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/\//g, " ")
+    .replace(/_/g, " ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 };
 
 
 /* ==========================================================
-                    VENDOR SIGNUP
-       SINGLE REGISTER PAGE - MULTIPLE SERVICES
-       NO FIELD MANDATORY
+   BUSINESS TYPE NORMALIZER
+========================================================== */
+
+const normalizeBusinessType = (value) => {
+  if (!value) {
+    return "";
+  }
+
+  const raw = normalizeSlug(value);
+
+  const aliases = {
+    individual: "individual",
+
+    "individual-owner": "individual-owner",
+
+    "sole-proprietorship": "sole-proprietorship",
+
+    proprietorship: "proprietorship",
+
+    partnership: "partnership",
+
+    llp: "llp",
+
+    company: "company",
+
+    corporation: "corporation",
+
+    "private-company": "private-limited",
+
+    "private-limited-company": "private-limited",
+
+    "private-limited": "private-limited",
+
+    "public-company": "public-limited",
+
+    "public-limited-company": "public-limited",
+
+    "public-limited": "public-limited",
+
+    agency: "agency",
+
+    "travel-agency": "agency",
+
+    "tour-operator": "tour-operator",
+
+    dmc: "dmc",
+
+    "destination-management-company": "dmc",
+
+    "property-group": "hotel-property-group",
+
+    "hotel-group": "hotel-property-group",
+
+    "hotel-property-group": "hotel-property-group",
+
+    "transport-operator": "transport-operator",
+
+    "bus-operator": "bus-operator",
+
+    "fleet-owner": "fleet-owner",
+
+    "activity-operator": "activity-operator",
+
+    "event-organizer": "event-organizer",
+
+    "cruise-operator": "cruise-operator",
+
+    "religious-temple-trust": "religious-darshan-operator",
+
+    "religious-darshan-operator": "religious-darshan-operator",
+
+    "darshan-operator": "religious-darshan-operator",
+
+    "non-profit-foundation": "non-profit",
+
+    "non-profit": "non-profit",
+
+    government: "government",
+
+    "government-public-authority": "government",
+
+    other: "other",
+  };
+
+  return aliases[raw] || "";
+};
+
+
+/* ==========================================================
+   VERTICAL NORMALIZER
+========================================================== */
+
+const normalizeVertical = (value) => {
+  const raw = normalizeSlug(value);
+
+  const aliases = {
+    stay: "stay",
+    stays: "stay",
+    accommodation: "stay",
+    accommodations: "stay",
+
+    hotel: "stay",
+    homestay: "stay",
+    resort: "stay",
+    villa: "stay",
+    apartment: "stay",
+    guesthouse: "stay",
+    hostel: "stay",
+    camp: "stay",
+    campsite: "stay",
+    farmhouse: "stay",
+    "vacation-home": "stay",
+    palace: "stay",
+    motel: "stay",
+    bnb: "stay",
+    lodge: "stay",
+    inn: "stay",
+    "serviced-apartment": "stay",
+
+    bus: "bus",
+    buses: "bus",
+
+    cab: "cab",
+    cabs: "cab",
+    taxi: "cab",
+    "car-rental": "cab",
+
+    package: "packages",
+    packages: "packages",
+    holiday: "packages",
+    holidays: "packages",
+    tour: "packages",
+    tours: "packages",
+
+    activity: "activities",
+    activities: "activities",
+    experience: "activities",
+    experiences: "activities",
+
+    event: "events",
+    events: "events",
+    nightlife: "events",
+    nightclub: "events",
+
+    darshan: "darshan",
+    religious: "darshan",
+    temple: "darshan",
+
+    cruise: "cruise",
+    cruises: "cruise",
+  };
+
+  return aliases[raw] || "";
+};
+
+
+/* ==========================================================
+   STAY SUBTYPE NORMALIZER
+========================================================== */
+
+const normalizeStaySubtype = (value) => {
+  const raw = normalizeSlug(value);
+
+  const aliases = {
+    hotel: "hotel",
+
+    homestay: "homestay",
+
+    resort: "resort",
+
+    villa: "villa",
+
+    apartment: "apartment",
+
+    "serviced-apartment": "serviced-apartment",
+
+    guesthouse: "guesthouse",
+
+    "guest-house": "guesthouse",
+
+    hostel: "hostel",
+
+    camp: "camp",
+
+    campsite: "campsite",
+
+    "camp-site": "campsite",
+
+    farmhouse: "farmhouse",
+
+    "farm-house": "farmhouse",
+
+    "vacation-home": "vacation-home",
+
+    "vacation-house": "vacation-home",
+
+    palace: "palace",
+
+    motel: "motel",
+
+    bnb: "bnb",
+
+    "bed-and-breakfast": "bnb",
+
+    lodge: "lodge",
+
+    inn: "inn",
+  };
+
+  const subtype = aliases[raw] || "";
+
+  return STAY_SUBTYPES.includes(subtype)
+    ? subtype
+    : "";
+};
+
+
+/* ==========================================================
+   LEGACY SERVICE VALUES
+
+   IMPORTANT:
+
+   Parent "stay" is NOT stored in services[].
+
+   Example:
+
+   vertical        = "stay"
+   selectedVertical= "stay"
+   staySubtype     = "hotel"
+   service         = "hotel"
+   services        = ["hotel"]
+========================================================== */
+
+const LEGACY_SERVICES = new Set([
+  "hotel",
+  "homestay",
+  "resort",
+  "villa",
+  "apartment",
+  "guesthouse",
+  "hostel",
+  "camp",
+  "campsite",
+  "farmhouse",
+  "vacation-home",
+  "palace",
+  "motel",
+  "bnb",
+  "lodge",
+  "inn",
+  "serviced-apartment",
+
+  "cab",
+  "car-rental",
+  "bike-rental",
+
+  "bus",
+
+  "holiday-package",
+  "packages",
+
+  "activities",
+
+  "events",
+  "night-club",
+
+  "BMT Darshan",
+  "darshan",
+
+  "cruise",
+
+  "visa",
+  "travel-insurance",
+
+  "other",
+]);
+
+
+const normalizeLegacyService = (value) => {
+  if (!value) {
+    return "";
+  }
+
+  const original = normalizeString(value);
+
+  if (original === "BMT Darshan") {
+    return "BMT Darshan";
+  }
+
+  const raw = normalizeSlug(original);
+
+  /*
+   * Parent Stay ko legacy services array me
+   * kabhi save nahi karna.
+   */
+
+  if (
+    raw === "stay" ||
+    raw === "stays" ||
+    raw === "accommodation"
+  ) {
+    return "";
+  }
+
+  const aliases = {
+    hotel: "hotel",
+
+    homestay: "homestay",
+
+    resort: "resort",
+
+    villa: "villa",
+
+    apartment: "apartment",
+
+    guesthouse: "guesthouse",
+
+    "guest-house": "guesthouse",
+
+    hostel: "hostel",
+
+    camp: "camp",
+
+    campsite: "campsite",
+
+    farmhouse: "farmhouse",
+
+    "vacation-home": "vacation-home",
+
+    "vacation-house": "vacation-home",
+
+    palace: "palace",
+
+    motel: "motel",
+
+    bnb: "bnb",
+
+    lodge: "lodge",
+
+    inn: "inn",
+
+    "serviced-apartment": "serviced-apartment",
+
+    cab: "cab",
+
+    taxi: "cab",
+
+    "car-rental": "car-rental",
+
+    "bike-rental": "bike-rental",
+
+    bus: "bus",
+
+    package: "packages",
+
+    packages: "packages",
+
+    holiday: "holiday-package",
+
+    holidays: "holiday-package",
+
+    tour: "holiday-package",
+
+    tours: "holiday-package",
+
+    activity: "activities",
+
+    activities: "activities",
+
+    experience: "activities",
+
+    experiences: "activities",
+
+    event: "events",
+
+    events: "events",
+
+    nightlife: "night-club",
+
+    nightclub: "night-club",
+
+    "night-club": "night-club",
+
+    darshan: "darshan",
+
+    "bmt-darshan": "darshan",
+
+    religious: "darshan",
+
+    cruise: "cruise",
+
+    cruises: "cruise",
+
+    visa: "visa",
+
+    insurance: "travel-insurance",
+
+    "travel-insurance": "travel-insurance",
+
+    other: "other",
+  };
+
+  const normalized = aliases[raw] || raw;
+
+  return LEGACY_SERVICES.has(normalized)
+    ? normalized
+    : "";
+};
+
+
+/* ==========================================================
+   NORMALIZE SERVICES
+========================================================== */
+
+const normalizeServices = ({
+  services,
+  vertical,
+  staySubtype,
+}) => {
+  let list = [];
+
+  if (Array.isArray(services)) {
+    list = services;
+  } else if (services) {
+    list = [services];
+  }
+
+  list = list
+    .map(normalizeLegacyService)
+    .filter(Boolean);
+
+  /*
+   * Never save parent stay in legacy services.
+   */
+
+  list = list.filter((item) => item !== "stay");
+
+  /*
+   * Stay => subtype service.
+   */
+
+  if (vertical === "stay" && staySubtype) {
+    const subtypeService =
+      normalizeLegacyService(staySubtype);
+
+    if (
+      subtypeService &&
+      !list.includes(subtypeService)
+    ) {
+      list.push(subtypeService);
+    }
+  }
+
+  /*
+   * Other BMT verticals.
+   */
+
+  if (vertical && vertical !== "stay") {
+    const verticalServiceMap = {
+      bus: "bus",
+
+      cab: "cab",
+
+      packages: "packages",
+
+      activities: "activities",
+
+      events: "events",
+
+      darshan: "darshan",
+
+      cruise: "cruise",
+    };
+
+    const mapped = verticalServiceMap[vertical];
+
+    if (
+      mapped &&
+      !list.includes(mapped)
+    ) {
+      list.push(mapped);
+    }
+  }
+
+  return [...new Set(list)];
+};
+
+
+/* ==========================================================
+   CREATE JWT
+
+   IMPORTANT:
+   This function is called ONLY AFTER admin approval.
+========================================================== */
+
+const createToken = (vendor) => {
+  const secret = process.env.JWT_SECRET;
+
+  if (!secret) {
+    throw new Error(
+      "JWT_SECRET is not configured"
+    );
+  }
+
+  return jwt.sign(
+    {
+      id: vendor._id,
+
+      vendorId: vendor._id,
+
+      role: vendor.role,
+
+      isOwnerAccount: vendor.isOwnerAccount,
+
+      vertical: vendor.vertical,
+
+      selectedVertical: vendor.selectedVertical,
+
+      staySubtype: vendor.staySubtype,
+    },
+
+    secret,
+
+    {
+      expiresIn:
+        process.env.JWT_EXPIRES_IN || "7d",
+    }
+  );
+};
+
+
+/* ==========================================================
+   SAFE VENDOR RESPONSE
+========================================================== */
+
+const safeVendorResponse = (vendor) => {
+  if (!vendor) {
+    return null;
+  }
+
+  const source =
+    typeof vendor.toObject === "function"
+      ? vendor.toObject()
+      : vendor;
+
+  return {
+    _id: source._id,
+
+    id: source._id,
+
+    name: source.name,
+
+    email: source.email,
+
+    phone: source.phone,
+
+    role: source.role,
+
+    isOwnerAccount: source.isOwnerAccount,
+
+    vertical: source.vertical,
+
+    selectedVertical: source.selectedVertical,
+
+    staySubtype: source.staySubtype,
+
+    service: source.service,
+
+    services: source.services || [],
+
+    businessName: source.businessName,
+
+    legalBusinessName: source.legalBusinessName,
+
+    businessType: source.businessType,
+
+    businessEmail: source.businessEmail,
+
+    businessPhone: source.businessPhone,
+
+    country: source.country,
+
+    countryCode: source.countryCode,
+
+    state: source.state,
+
+    city: source.city,
+
+    postalCode: source.postalCode,
+
+    address: source.address,
+
+    timezone: source.timezone,
+
+    preferredLanguage: source.preferredLanguage,
+
+    preferredCurrency: source.preferredCurrency,
+
+    settlementCurrency: source.settlementCurrency,
+
+    onboardingStatus: source.onboardingStatus,
+
+    onboardingComplete: source.onboardingComplete,
+
+    onboardingStep: source.onboardingStep,
+
+    onboardingProgress: source.onboardingProgress,
+
+    status: source.status,
+
+    isApproved: source.isApproved,
+
+    isActive: source.isActive,
+
+    accountStatus: source.accountStatus,
+
+    createdAt: source.createdAt,
+
+    updatedAt: source.updatedAt,
+  };
+};
+
+
+/* ==========================================================
+   DASHBOARD RESOLVER
+
+   MongoDB is source of truth.
+
+   Frontend localStorage / dropdown does NOT decide
+   which dashboard opens.
+========================================================== */
+
+const resolveDashboard = (vendor) => {
+  const vertical = normalizeVertical(
+    vendor?.selectedVertical ||
+    vendor?.vertical
+  );
+
+  if (!vertical) {
+    return "/onboarding";
+  }
+
+  /*
+   * Stay dashboard is subtype-specific.
+   */
+
+  if (vertical === "stay") {
+    const subtype = normalizeStaySubtype(
+      vendor?.staySubtype
+    );
+
+    if (!subtype) {
+      return "/onboarding";
+    }
+
+    return `/vendor/stay/${subtype}`;
+  }
+
+  /*
+   * Other vertical dashboards.
+   */
+
+  const dashboardMap = {
+    bus: "/vendor/bus",
+
+    cab: "/vendor/cab",
+
+    packages: "/vendor/packages",
+
+    activities: "/vendor/activities",
+
+    events: "/vendor/events",
+
+    darshan: "/vendor/darshan",
+
+    cruise: "/vendor/cruise",
+  };
+
+  return dashboardMap[vertical] || "/onboarding";
+};
+
+
+/* ==========================================================
+   SIGNUP
 ========================================================== */
 
 exports.signup = async (req, res) => {
   try {
     const body = req.body || {};
 
-
     /* ======================================================
-                    BASIC VALUES
+       AUTH DATA
     ====================================================== */
 
-    const name = body.name?.trim() || "";
+    const email = normalizeEmail(
+      body.email ||
+      body.businessEmail
+    );
 
-    const email = body.email
-      ? body.email.toLowerCase().trim()
-      : "";
+    const businessEmail = normalizeEmail(
+      body.businessEmail ||
+      body.email
+    );
 
-    const phone = body.phone?.trim() || "";
+    const phone = normalizePhone(
+      body.phone ||
+      body.businessPhone ||
+      body.ownerPhone
+    );
 
-    const password = body.password || "";
+    const password = normalizeString(
+      body.password
+    );
 
 
     /* ======================================================
-                    SERVICES
-
-      Supports:
-      services: ["hotel", "car-rental", "bus"]
-
-      OR
-
-      services: '["hotel","car-rental","bus"]'
-
-      OR
-
-      services: "hotel,car-rental,bus"
-
-      OR old service: "hotel"
+       VALIDATION
     ====================================================== */
 
-    let services = parseArray(body.services);
-
-    // Backward compatibility with old `service`
-    if (services.length === 0 && body.service) {
-      services = [body.service];
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        code: "EMAIL_REQUIRED",
+        message: "Email is required",
+      });
     }
 
-    // Remove empty + duplicate services
-    services = [
-      ...new Set(
-        services
-          .map((item) => String(item).trim())
-          .filter(Boolean)
+
+    if (!phone) {
+      return res.status(400).json({
+        success: false,
+        code: "PHONE_REQUIRED",
+        message: "Phone number is required",
+      });
+    }
+
+
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        code: "PASSWORD_REQUIRED",
+        message: "Password is required",
+      });
+    }
+
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        code: "PASSWORD_TOO_SHORT",
+        message:
+          "Password must be at least 6 characters",
+      });
+    }
+
+
+    /* ======================================================
+       DUPLICATE VENDOR CHECK
+    ====================================================== */
+
+    const existingVendor =
+      await Vendor.findOne({
+        $or: [
+          {
+            email,
+          },
+
+          {
+            businessEmail: email,
+          },
+
+          {
+            phone,
+          },
+
+          {
+            businessPhone: phone,
+          },
+        ],
+      });
+
+
+    if (existingVendor) {
+      return res.status(409).json({
+        success: false,
+
+        code: "VENDOR_ALREADY_EXISTS",
+
+        status:
+          existingVendor.status ||
+          "PENDING",
+
+        isApproved:
+          existingVendor.isApproved === true,
+
+        message:
+          "A vendor account already exists with this email or phone number.",
+      });
+    }
+
+
+    /* ======================================================
+       SELECTED VERTICAL
+    ====================================================== */
+
+    const selectedVertical =
+      normalizeVertical(
+        body.selectedVertical ||
+        body.vertical ||
+        body.service
+      );
+
+
+    if (
+      !selectedVertical ||
+      !MAIN_VERTICALS.includes(
+        selectedVertical
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+
+        code: "INVALID_VERTICAL",
+
+        message:
+          "Please select a valid business vertical.",
+      });
+    }
+
+
+    /* ======================================================
+       STAY SUBTYPE
+    ====================================================== */
+
+    let staySubtype = "";
+
+
+    if (selectedVertical === "stay") {
+      staySubtype =
+        normalizeStaySubtype(
+          body.staySubtype ||
+          body.subtype ||
+          body.propertyType ||
+          body.stayDetails?.propertyType
+        );
+
+
+      /*
+       * Frontend may send:
+       * service = hotel
+       */
+
+      if (
+        !staySubtype &&
+        body.service
+      ) {
+        staySubtype =
+          normalizeStaySubtype(
+            body.service
+          );
+      }
+
+
+      /*
+       * Frontend may send:
+       * services = ["stay", "hotel"]
+       */
+
+      if (
+        !staySubtype &&
+        Array.isArray(body.services)
+      ) {
+        const foundSubtype =
+          body.services.find(
+            (item) =>
+              normalizeStaySubtype(item)
+          );
+
+
+        if (foundSubtype) {
+          staySubtype =
+            normalizeStaySubtype(
+              foundSubtype
+            );
+        }
+      }
+
+
+      /*
+       * Stay must always have subtype.
+       */
+
+      if (!staySubtype) {
+        return res.status(400).json({
+          success: false,
+
+          code:
+            "STAY_SUBTYPE_REQUIRED",
+
+          message:
+            "Please select your stay/property type.",
+        });
+      }
+    }
+
+
+    /* ======================================================
+       SERVICES
+    ====================================================== */
+
+    const services =
+      normalizeServices({
+        services:
+          body.services ||
+          body.service,
+
+        vertical:
+          selectedVertical,
+
+        staySubtype,
+      });
+
+
+    /* ======================================================
+       BUSINESS TYPE
+    ====================================================== */
+
+    const businessType =
+      normalizeBusinessType(
+        body.businessType
+      );
+
+
+    if (
+      body.businessType &&
+      !businessType
+    ) {
+      return res.status(400).json({
+        success: false,
+
+        code:
+          "INVALID_BUSINESS_TYPE",
+
+        message:
+          `Unsupported business type: ${body.businessType}`,
+      });
+    }
+
+
+    /* ======================================================
+       PASSWORD HASH
+    ====================================================== */
+
+    const salt =
+      await bcrypt.genSalt(10);
+
+
+    const hashedPassword =
+      await bcrypt.hash(
+        password,
+        salt
+      );
+
+
+    /* ======================================================
+       STAY DETAILS
+    ====================================================== */
+
+    const stayDetails = {
+      ...(body.stayDetails || {}),
+    };
+
+
+    if (
+      selectedVertical === "stay" &&
+      staySubtype
+    ) {
+      stayDetails.propertyType =
+        staySubtype;
+    }
+
+
+    /* ======================================================
+       VENDOR DATA
+    ====================================================== */
+
+    const vendorData = {
+      /* ==========================
+         ACCOUNT
+      ========================== */
+
+      name: normalizeString(
+        body.name ||
+        body.ownerName ||
+        body.contactName ||
+        body.businessName
       ),
-    ];
-
-
-    /* ======================================================
-                    EMAIL CHECK
-      Only check if email is actually provided
-    ====================================================== */
-
-    if (email) {
-      const emailExists = await Vendor.findOne({ email });
-
-      if (emailExists) {
-        return res.status(400).json({
-          success: false,
-          message: "Email already registered.",
-        });
-      }
-    }
-
-
-    /* ======================================================
-                    PHONE CHECK
-      Only check if phone is actually provided
-    ====================================================== */
-
-    if (phone) {
-      const phoneExists = await Vendor.findOne({ phone });
-
-      if (phoneExists) {
-        return res.status(400).json({
-          success: false,
-          message: "Phone number already registered.",
-        });
-      }
-    }
-
-
-    /* ======================================================
-                    PASSWORD
-      Optional according to your requirement.
-
-      If password comes, hash it.
-      If empty, store empty string.
-    ====================================================== */
-
-    let hashedPassword = "";
-
-    if (password) {
-      if (password.length < 6) {
-        return res.status(400).json({
-          success: false,
-          message: "Password must be at least 6 characters.",
-        });
-      }
-
-      hashedPassword = await bcrypt.hash(password, 10);
-    }
-
-
-    /* ======================================================
-                    SERVICE DETAILS
-
-      JSON can come from frontend as:
-      carRentalDetails: {...}
-      busDetails: {...}
-      stayDetails: {...}
-    ====================================================== */
-
-    const carRentalInput = parseObject(
-      body.carRentalDetails,
-      {}
-    );
-
-    const busInput = parseObject(
-      body.busDetails,
-      {}
-    );
-
-    const stayInput = parseObject(
-      body.stayDetails,
-      {}
-    );
-
-
-    /* ======================================================
-                    CREATE VENDOR
-    ====================================================== */
-
-    const vendor = await Vendor.create({
-
-      // ==========================================
-      // BASIC
-      // ==========================================
-
-      name,
 
       email,
 
@@ -227,341 +1112,342 @@ exports.signup = async (req, res) => {
 
       password: hashedPassword,
 
-      profileImage: body.profileImage || "",
+      role: "owner",
+
+      isOwnerAccount: true,
 
 
-      // ==========================================
-      // SERVICES
-      // ==========================================
+      /* ==========================
+         VERTICAL
+      ========================== */
+
+      vertical: selectedVertical,
+
+      selectedVertical,
+
+      staySubtype,
+
+
+      /* ==========================
+         LEGACY SERVICE
+      ========================== */
 
       services,
 
-      // Old code compatibility
-      service: body.service || services[0] || "",
+      service:
+        selectedVertical === "stay"
+          ? staySubtype
+          : (
+              normalizeLegacyService(
+                body.service
+              ) ||
+              normalizeLegacyService(
+                selectedVertical
+              )
+            ),
 
 
-      // ==========================================
-      // COMPANY DETAILS
-      // ==========================================
+      /* ==========================
+         BUSINESS
+      ========================== */
 
-      companyName: body.companyName || "",
-
-      businessName: body.businessName || "",
+      businessName:
+        normalizeString(
+          body.businessName
+        ),
 
       legalBusinessName:
-        body.legalBusinessName || "",
+        normalizeString(
+          body.legalBusinessName
+        ),
 
-      businessType: body.businessType || "",
+      businessType,
 
-
-      // ==========================================
-      // BUSINESS CONTACT
-      // ==========================================
-
-      businessEmail:
-        body.businessEmail || "",
+      businessEmail,
 
       businessPhone:
-        body.businessPhone || "",
-
-      alternatePhone:
-        body.alternatePhone || "",
+        normalizePhone(
+          body.businessPhone ||
+          phone
+        ),
 
       website:
-        body.website || "",
+        normalizeString(
+          body.website
+        ),
 
+      businessRegistrationNumber:
+        normalizeString(
+          body.businessRegistrationNumber
+        ),
 
-      // ==========================================
-      // ADDRESS
-      // ==========================================
+      taxRegistrationNumber:
+        normalizeString(
+          body.taxRegistrationNumber
+        ),
 
-      address:
-        body.address || "",
-
-      addressLine1:
-        body.addressLine1 || "",
-
-      addressLine2:
-        body.addressLine2 || "",
-
-      landmark:
-        body.landmark || "",
-
-      city:
-        body.city || "",
-
-      state:
-        body.state || "",
-
-      country:
-        body.country || "India",
-
-      pincode:
-        body.pincode || "",
-
-
-      // ==========================================
-      // GST
-      // ==========================================
+      vatNumber:
+        normalizeString(
+          body.vatNumber
+        ),
 
       gstNumber:
-        body.gstNumber || "",
-
-      gstRegistrationNumber:
-        body.gstRegistrationNumber || "",
-
-      gstCertificate:
-        body.gstCertificate || "",
-
-
-      // ==========================================
-      // PAN
-      // ==========================================
-
-      panNumber:
-        body.panNumber || "",
-
-      panCardNumber:
-        body.panCardNumber || "",
-
-      panCard:
-        body.panCard || "",
-
-
-      // ==========================================
-      // AADHAAR
-      // ==========================================
-
-      aadharNumber:
-        body.aadharNumber || "",
-
-      aadharFront:
-        body.aadharFront || "",
-
-      aadharBack:
-        body.aadharBack || "",
-
-
-      // ==========================================
-      // BANK DETAILS
-      // ==========================================
-
-      accountHolderName:
-        body.accountHolderName || "",
-
-      bankName:
-        body.bankName || "",
-
-      branchName:
-        body.branchName || "",
-
-      accountNumber:
-        body.accountNumber || "",
-
-      confirmAccountNumber:
-        body.confirmAccountNumber || "",
-
-      ifscCode:
-        body.ifscCode || "",
-
-      cancelledCheque:
-        body.cancelledCheque || "",
-
-      passbookImage:
-        body.passbookImage || "",
-
-
-      // ==========================================
-      // CAR RENTAL DETAILS
-      // ==========================================
-
-      carRentalDetails: {
-
-        businessModel:
-          carRentalInput.businessModel ||
-          body.carRentalBusinessModel ||
-          "",
-
-        totalVehicles: Number(
-          carRentalInput.totalVehicles ??
-          body.totalVehicles ??
-          0
+        normalizeString(
+          body.gstNumber
         ),
 
-        vehicleTypes: parseArray(
-          carRentalInput.vehicleTypes ||
-          body.vehicleTypes
+      businessLicenseNumber:
+        normalizeString(
+          body.businessLicenseNumber
         ),
 
-        serviceCities: parseArray(
-          carRentalInput.serviceCities ||
-          body.serviceCities
+
+      /* ==========================
+         LOCATION
+      ========================== */
+
+      country:
+        normalizeString(
+          body.country
         ),
 
-        airportPickupAvailable: parseBoolean(
-          carRentalInput.airportPickupAvailable ??
-          body.airportPickupAvailable
+      countryCode:
+        normalizeString(
+          body.countryCode
         ),
 
-        outstationAvailable: parseBoolean(
-          carRentalInput.outstationAvailable ??
-          body.outstationAvailable
+      state:
+        normalizeString(
+          body.state ||
+          body.stateProvince ||
+          body.region
         ),
 
-        localRentalAvailable: parseBoolean(
-          carRentalInput.localRentalAvailable ??
-          body.localRentalAvailable
+      city:
+        normalizeString(
+          body.city
         ),
 
-        driverProvided: parseBoolean(
-          carRentalInput.driverProvided ??
-          body.driverProvided
+      postalCode:
+        normalizeString(
+          body.postalCode
         ),
 
-        selfDriveAvailable: parseBoolean(
-          carRentalInput.selfDriveAvailable ??
-          body.selfDriveAvailable
+      address:
+        normalizeString(
+          body.address
         ),
 
-        transportLicenseNumber:
-          carRentalInput.transportLicenseNumber ||
-          body.transportLicenseNumber ||
-          "",
-
-        licenseDocument:
-          carRentalInput.licenseDocument ||
-          body.licenseDocument ||
-          "",
-      },
-
-
-      // ==========================================
-      // BUS DETAILS
-      // ==========================================
-
-      busDetails: {
-
-        operatorName:
-          busInput.operatorName ||
-          body.operatorName ||
-          "",
-
-        totalBuses: Number(
-          busInput.totalBuses ??
-          body.totalBuses ??
-          0
+      timezone:
+        normalizeString(
+          body.timezone
         ),
 
-        busTypes: parseArray(
-          busInput.busTypes ||
-          body.busTypes
+
+      /* ==========================
+         PREFERENCES
+      ========================== */
+
+      preferredLanguage:
+        normalizeString(
+          body.preferredLanguage
         ),
 
-        operatingCities: parseArray(
-          busInput.operatingCities ||
-          body.busOperatingCities
+      preferredCurrency:
+        normalizeString(
+          body.preferredCurrency
         ),
 
-        routes: parseArray(
-          busInput.routes ||
-          body.busRoutes
+      settlementCurrency:
+        normalizeString(
+          body.settlementCurrency
         ),
 
-        transportPermitNumber:
-          busInput.transportPermitNumber ||
-          body.transportPermitNumber ||
-          "",
 
-        transportPermitDocument:
-          busInput.transportPermitDocument ||
-          body.transportPermitDocument ||
-          "",
+      /* ==========================
+         OWNER
+      ========================== */
 
-        operatorLicenseNumber:
-          busInput.operatorLicenseNumber ||
-          body.operatorLicenseNumber ||
-          "",
-
-        operatorLicenseDocument:
-          busInput.operatorLicenseDocument ||
-          body.operatorLicenseDocument ||
-          "",
-      },
-
-
-      // ==========================================
-      // HOTEL / STAY DETAILS
-      // ==========================================
-
-      stayDetails: {
-
-        totalProperties: Number(
-          stayInput.totalProperties ??
-          body.totalProperties ??
-          0
+      ownerName:
+        normalizeString(
+          body.ownerName ||
+          body.name
         ),
 
-        propertyTypes: parseArray(
-          stayInput.propertyTypes ||
-          body.propertyTypes
+      ownerEmail:
+        normalizeEmail(
+          body.ownerEmail ||
+          email
         ),
 
-        operatingCities: parseArray(
-          stayInput.operatingCities ||
-          body.stayOperatingCities
+      ownerPhone:
+        normalizePhone(
+          body.ownerPhone ||
+          phone
         ),
-      },
 
 
-      // ==========================================
-      // VERIFICATION / APPROVAL
-      // ==========================================
+      /* ==========================
+         STAY DETAILS
+      ========================== */
 
-      isEmailVerified: false,
+      stayDetails,
 
-      isPhoneVerified: false,
 
-      status: "PENDING",
+      /* ==================================================
+         ONBOARDING
 
-      isApproved: false,
+         Application has been submitted.
+         Admin approval is still required.
+      ================================================== */
 
-      isActive: true,
-    });
+      onboardingStatus:
+        "submitted",
+
+      onboardingComplete:
+        true,
+
+      onboardingStep:
+        18,
+
+      onboardingProgress:
+        100,
+
+
+      /* ==================================================
+         ADMIN APPROVAL
+
+         MOST IMPORTANT:
+
+         Signup DOES NOT approve vendor.
+      ================================================== */
+
+      status:
+        "PENDING",
+
+      isApproved:
+        false,
+
+      isActive:
+        true,
+
+      accountStatus:
+        "active",
+    };
 
 
     /* ======================================================
-                    RESPONSE
+       OPTIONAL ONBOARDING FIELDS
+    ====================================================== */
+
+    const optionalFields = [
+      "businessDescription",
+
+      "communicationNumber",
+
+      "whatsappNumber",
+
+      "ownerDesignation",
+
+      "ownerGovernmentIdType",
+
+      "ownerGovernmentIdNumber",
+
+      "bankCountry",
+
+      "bankCurrency",
+
+      "bankName",
+
+      "bankAccountName",
+
+      "bankAccountNumber",
+
+      "bankSwiftCode",
+
+      "bankIban",
+
+      "bankIfscCode",
+
+      "taxCountry",
+
+      "taxType",
+
+      "taxName",
+
+      "taxId",
+
+      "logo",
+
+      "businessLogo",
+
+      "documents",
+
+      "media",
+
+      "contractAccepted",
+
+      "termsAccepted",
+
+      "privacyAccepted",
+    ];
+
+
+    optionalFields.forEach(
+      (field) => {
+        if (
+          body[field] !==
+          undefined
+        ) {
+          vendorData[field] =
+            body[field];
+        }
+      }
+    );
+
+
+    /* ======================================================
+       CREATE VENDOR
+    ====================================================== */
+
+    const vendor =
+      await Vendor.create(
+        vendorData
+      );
+
+
+    /* ======================================================
+       IMPORTANT
+
+       NO TOKEN
+       NO AUTO LOGIN
+       NO DASHBOARD ACCESS
+
+       Admin approval required.
     ====================================================== */
 
     return res.status(201).json({
       success: true,
 
+      code:
+        "APPLICATION_SUBMITTED",
+
       message:
-        "Vendor registration successful. Your account is waiting for admin approval.",
+        "Registration submitted successfully. Your BMT Connect vendor application is waiting for admin approval.",
 
-      vendor: {
-        id: vendor._id,
+      approvalRequired:
+        true,
 
-        name: vendor.name,
+      status:
+        "PENDING",
 
-        email: vendor.email,
+      isApproved:
+        false,
 
-        phone: vendor.phone,
-
-        service: vendor.service,
-
-        services: vendor.services,
-
-        companyName: vendor.companyName,
-
-        businessName: vendor.businessName,
-
-        status: vendor.status,
-
-        isApproved: vendor.isApproved,
-
-        createdAt: vendor.createdAt,
-      },
+      vendor:
+        safeVendorResponse(
+          vendor
+        ),
     });
 
   } catch (error) {
@@ -571,188 +1457,451 @@ exports.signup = async (req, res) => {
       error
     );
 
-    // Mongo duplicate error fallback
-    if (error.code === 11000) {
 
-      const field = Object.keys(
-        error.keyPattern || {}
-      )[0] || "field";
+    /* ======================================================
+       DUPLICATE MONGODB ERROR
+    ====================================================== */
 
-      return res.status(400).json({
+    if (error?.code === 11000) {
+
+      const field =
+        Object.keys(
+          error.keyPattern ||
+          error.keyValue ||
+          {}
+        )[0] || "field";
+
+
+      return res.status(409).json({
         success: false,
-        message: `${field} already exists.`,
+
+        code:
+          "DUPLICATE_VENDOR",
+
+        message:
+          `${field} already exists`,
       });
     }
 
+
+    /* ======================================================
+       MONGOOSE VALIDATION ERROR
+    ====================================================== */
+
+    if (
+      error?.name ===
+      "ValidationError"
+    ) {
+
+      const details =
+        Object.values(
+          error.errors || {}
+        ).map(
+          (item) => ({
+            field:
+              item.path,
+
+            value:
+              item.value,
+
+            message:
+              item.message,
+          })
+        );
+
+
+      return res.status(400).json({
+        success: false,
+
+        code:
+          "VALIDATION_ERROR",
+
+        message:
+          details
+            .map(
+              (item) =>
+                item.message
+            )
+            .join(", ") ||
+          "Invalid registration data",
+
+        details,
+      });
+    }
+
+
     return res.status(500).json({
       success: false,
+
+      code:
+        "SIGNUP_FAILED",
+
       message:
-        error.message ||
-        "Vendor registration failed.",
+        error?.message ||
+        "Vendor signup failed",
     });
   }
 };
 
 
 /* ==========================================================
-                    VENDOR LOGIN
+   LOGIN
+
+   CRITICAL SECURITY FLOW:
+
+   Correct password alone is NOT enough.
+
+   Vendor MUST also be:
+   status = APPROVED
+   isApproved = true
+
+   Only then JWT is issued.
 ========================================================== */
 
 exports.login = async (req, res) => {
   try {
 
-    const email = req.body.email
-      ? req.body.email.toLowerCase().trim()
-      : "";
+    const {
+      email,
+      password,
+    } = req.body || {};
 
-    const password = req.body.password || "";
+
+    const normalizedEmail =
+      normalizeEmail(email);
 
 
-    // Login ke liye email/password required rahenge
-    if (!email || !password) {
+    /* ======================================================
+       REQUIRED FIELDS
+    ====================================================== */
+
+    if (
+      !normalizedEmail ||
+      !password
+    ) {
       return res.status(400).json({
         success: false,
+
+        code:
+          "EMAIL_PASSWORD_REQUIRED",
+
         message:
-          "Email and password are required for login.",
+          "Email and password are required",
       });
     }
 
 
-    const vendor = await Vendor.findOne({ email });
+    /* ======================================================
+       FIND VENDOR
+    ====================================================== */
+
+    const vendor =
+      await Vendor.findOne({
+        $or: [
+          {
+            email:
+              normalizedEmail,
+          },
+
+          {
+            businessEmail:
+              normalizedEmail,
+          },
+        ],
+      }).select("+password");
 
 
     if (!vendor) {
-      return res.status(404).json({
+      return res.status(401).json({
         success: false,
-        message: "Vendor not found.",
-      });
-    }
 
+        code:
+          "INVALID_CREDENTIALS",
 
-    // Password empty account
-    if (!vendor.password) {
-      return res.status(400).json({
-        success: false,
         message:
-          "Password is not set for this vendor account.",
+          "Invalid email or password",
       });
     }
 
 
-    /* ---------------- PENDING ---------------- */
+    /* ======================================================
+       VERIFY PASSWORD
+    ====================================================== */
 
-    if (vendor.status === "PENDING") {
-      return res.status(403).json({
+    const passwordMatch =
+      await bcrypt.compare(
+        String(password),
+        vendor.password
+      );
+
+
+    if (!passwordMatch) {
+      return res.status(401).json({
         success: false,
+
+        code:
+          "INVALID_CREDENTIALS",
+
         message:
-          "Your account is under review. Please wait for admin approval.",
+          "Invalid email or password",
       });
     }
 
 
-    /* ---------------- REJECTED ---------------- */
-
-    if (vendor.status === "REJECTED") {
-      return res.status(403).json({
-        success: false,
-        message:
-          vendor.rejectionReason ||
-          "Your account has been rejected by admin.",
-      });
-    }
-
-
-    /* ---------------- APPROVED CHECK ---------------- */
+    /* ======================================================
+       SUSPENDED ACCOUNT
+    ====================================================== */
 
     if (
-      vendor.status !== "APPROVED" ||
-      !vendor.isApproved
+      String(
+        vendor.accountStatus || ""
+      ).toLowerCase() ===
+        "suspended" ||
+
+      String(
+        vendor.status || ""
+      ).toUpperCase() ===
+        "SUSPENDED"
     ) {
       return res.status(403).json({
         success: false,
+
+        code:
+          "ACCOUNT_SUSPENDED",
+
+        status:
+          "SUSPENDED",
+
         message:
-          "Your vendor account is not approved.",
+          "Your BMT Connect vendor account has been suspended. Please contact support.",
       });
     }
 
 
-    /* ---------------- ACTIVE CHECK ---------------- */
+    /* ======================================================
+       INACTIVE ACCOUNT
+    ====================================================== */
 
-    if (!vendor.isActive) {
+    if (
+      vendor.isActive === false
+    ) {
       return res.status(403).json({
         success: false,
+
+        code:
+          "ACCOUNT_INACTIVE",
+
         message:
-          "Your account has been disabled.",
+          "Your BMT Connect vendor account is inactive.",
       });
     }
 
 
-    /* ---------------- PASSWORD CHECK ---------------- */
+    /* ======================================================
+       REJECTED APPLICATION
+    ====================================================== */
 
-    const isMatch = await bcrypt.compare(
-      password,
-      vendor.password
-    );
+    if (
+      String(
+        vendor.status || ""
+      ).toUpperCase() ===
+        "REJECTED" ||
 
-
-    if (!isMatch) {
-      return res.status(400).json({
+      String(
+        vendor.onboardingStatus || ""
+      ).toLowerCase() ===
+        "rejected"
+    ) {
+      return res.status(403).json({
         success: false,
+
+        code:
+          "APPLICATION_REJECTED",
+
+        status:
+          "REJECTED",
+
+        isApproved:
+          false,
+
         message:
-          "Invalid email or password.",
+          "Your BMT Connect vendor application was rejected. Please contact support.",
       });
     }
 
 
-    /* ---------------- JWT ---------------- */
+    /* ======================================================
+       ADMIN APPROVAL CHECK
 
-    const token = jwt.sign(
-      {
-        id: vendor._id,
-        email: vendor.email,
+       THIS IS THE MAIN GATE.
 
-        // old code
-        service: vendor.service,
+       PENDING vendor cannot login.
+       No JWT will be generated.
+    ====================================================== */
 
-        // new multiple services
-        services: vendor.services,
-      },
-      process.env.JWT_SECRET,
-      {
-        expiresIn: "7d",
+    const approved =
+      String(
+        vendor.status || ""
+      ).toUpperCase() ===
+        "APPROVED" &&
+
+      vendor.isApproved === true;
+
+
+    if (!approved) {
+      return res.status(403).json({
+        success: false,
+
+        code:
+          "ADMIN_APPROVAL_REQUIRED",
+
+        approvalRequired:
+          true,
+
+        status:
+          vendor.status ||
+          "PENDING",
+
+        isApproved:
+          false,
+
+        message:
+          "Your vendor application is waiting for admin approval. You can sign in after BMT Connect approves your application.",
+      });
+    }
+
+
+    /* ======================================================
+       GET VERTICAL FROM DATABASE
+
+       DO NOT trust frontend selected value.
+    ====================================================== */
+
+    const selectedVertical =
+      normalizeVertical(
+        vendor.selectedVertical ||
+        vendor.vertical
+      );
+
+
+    if (
+      !selectedVertical ||
+      !MAIN_VERTICALS.includes(
+        selectedVertical
+      )
+    ) {
+      return res.status(403).json({
+        success: false,
+
+        code:
+          "VERTICAL_NOT_CONFIGURED",
+
+        message:
+          "Your vendor account does not have a valid business vertical.",
+      });
+    }
+
+
+    /* ======================================================
+       STAY SUBTYPE
+    ====================================================== */
+
+    let staySubtype = "";
+
+
+    if (
+      selectedVertical ===
+      "stay"
+    ) {
+
+      staySubtype =
+        normalizeStaySubtype(
+          vendor.staySubtype
+        );
+
+
+      if (!staySubtype) {
+        return res.status(403).json({
+          success: false,
+
+          code:
+            "STAY_SUBTYPE_NOT_CONFIGURED",
+
+          message:
+            "Your stay/property subtype is not configured.",
+        });
       }
-    );
+    }
 
 
-    /* ---------------- LAST LOGIN ---------------- */
+    /* ======================================================
+       EXACT DASHBOARD
 
-    vendor.lastLogin = new Date();
+       Database decides dashboard.
+    ====================================================== */
 
-    await vendor.save();
+    const dashboard =
+      resolveDashboard(vendor);
 
+
+    if (
+      !dashboard ||
+      dashboard ===
+        "/onboarding"
+    ) {
+      return res.status(403).json({
+        success: false,
+
+        code:
+          "DASHBOARD_NOT_CONFIGURED",
+
+        message:
+          "Dashboard could not be resolved for this vendor account.",
+      });
+    }
+
+
+    /* ======================================================
+       CREATE JWT
+
+       IMPORTANT:
+       JWT only after approval.
+    ====================================================== */
+
+    const token =
+      createToken(vendor);
+
+
+    /* ======================================================
+       SUCCESS
+    ====================================================== */
 
     return res.status(200).json({
       success: true,
-      message: "Login successful.",
+
+      code:
+        "LOGIN_SUCCESS",
+
+      message:
+        "Login successful",
+
       token,
 
-      vendor: {
-        id: vendor._id,
-        name: vendor.name,
-        email: vendor.email,
-        phone: vendor.phone,
+      dashboard,
 
-        service: vendor.service,
-        services: vendor.services,
+      vertical:
+        selectedVertical,
 
-        companyName: vendor.companyName,
-        businessName: vendor.businessName,
+      staySubtype:
+        selectedVertical ===
+          "stay"
+          ? staySubtype
+          : "",
 
-        profileImage: vendor.profileImage,
-
-        status: vendor.status,
-        isApproved: vendor.isApproved,
-      },
+      vendor:
+        safeVendorResponse(
+          vendor
+        ),
     });
 
   } catch (error) {
@@ -762,194 +1911,486 @@ exports.login = async (req, res) => {
       error
     );
 
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-
-/* ==========================================================
-                GET ALL PENDING VENDORS
-========================================================== */
-
-exports.getPendingVendors = async (req, res) => {
-  try {
-
-    const vendors = await Vendor.find({
-      status: "PENDING",
-    })
-      .select("-password -refreshToken")
-      .sort({ createdAt: -1 });
-
-
-    return res.status(200).json({
-      success: true,
-      total: vendors.length,
-      vendors,
-    });
-
-  } catch (error) {
-
-    console.error(
-      "❌ Get Pending Vendors Error:",
-      error
-    );
 
     return res.status(500).json({
       success: false,
-      message: error.message,
-    });
-  }
-};
 
+      code:
+        "LOGIN_FAILED",
 
-/* ==========================================================
-                    APPROVE VENDOR
-========================================================== */
-
-exports.approveVendor = async (req, res) => {
-  try {
-
-    const vendor = await Vendor.findById(
-      req.params.id
-    );
-
-
-    if (!vendor) {
-      return res.status(404).json({
-        success: false,
-        message: "Vendor not found.",
-      });
-    }
-
-
-    vendor.status = "APPROVED";
-    vendor.isApproved = true;
-    vendor.approvedAt = new Date();
-    vendor.rejectionReason = "";
-
-
-    if (req.admin?._id) {
-      vendor.approvedBy = req.admin._id;
-    }
-
-
-    await vendor.save();
-
-
-    return res.status(200).json({
-      success: true,
-      message: "Vendor approved successfully.",
-      vendor,
-    });
-
-  } catch (error) {
-
-    console.error(
-      "❌ Approve Vendor Error:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-
-/* ==========================================================
-                    REJECT VENDOR
-========================================================== */
-
-exports.rejectVendor = async (req, res) => {
-  try {
-
-    const { rejectionReason } = req.body;
-
-
-    const vendor = await Vendor.findById(
-      req.params.id
-    );
-
-
-    if (!vendor) {
-      return res.status(404).json({
-        success: false,
-        message: "Vendor not found.",
-      });
-    }
-
-
-    vendor.status = "REJECTED";
-    vendor.isApproved = false;
-    vendor.rejectionReason =
-      rejectionReason || "Rejected by admin.";
-
-
-    await vendor.save();
-
-
-    return res.status(200).json({
-      success: true,
-      message: "Vendor rejected successfully.",
-      vendor,
-    });
-
-  } catch (error) {
-
-    console.error(
-      "❌ Reject Vendor Error:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-
-/* ==========================================================
-                    GET VENDOR PROFILE
-========================================================== */
-
-exports.getVendorProfile = async (req, res) => {
-  try {
-
-    const vendor = await Vendor.findById(
-      req.vendor._id
-    ).select("-password -refreshToken");
-
-
-    if (!vendor) {
-      return res.status(404).json({
-        success: false,
-        message: "Vendor not found.",
-      });
-    }
-
-
-    return res.status(200).json({
-      success: true,
       message:
-        "Vendor profile fetched successfully.",
-      vendor,
-    });
-
-  } catch (error) {
-
-    console.error(
-      "❌ Get Vendor Profile Error:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message: error.message,
+        error?.message ||
+        "Vendor login failed",
     });
   }
 };
+
+
+/* ==========================================================
+   GET LOGGED-IN VENDOR PROFILE
+========================================================== */
+
+exports.getVendorProfile =
+  async (req, res) => {
+
+    try {
+
+      const vendorId =
+        req.vendor?._id ||
+        req.vendor?.id ||
+        req.user?._id ||
+        req.user?.id ||
+        req.vendorId;
+
+
+      if (!vendorId) {
+        return res.status(401).json({
+          success: false,
+
+          code:
+            "UNAUTHORIZED",
+
+          message:
+            "Unauthorized",
+        });
+      }
+
+
+      const vendor =
+        await Vendor.findById(
+          vendorId
+        ).select("-password");
+
+
+      if (!vendor) {
+        return res.status(404).json({
+          success: false,
+
+          code:
+            "VENDOR_NOT_FOUND",
+
+          message:
+            "Vendor not found",
+        });
+      }
+
+
+      /*
+       * Extra protection:
+       * Even with old/stale token,
+       * pending/suspended vendor shouldn't
+       * receive protected vendor profile.
+       */
+
+      if (
+        String(
+          vendor.status || ""
+        ).toUpperCase() !==
+          "APPROVED" ||
+
+        vendor.isApproved !== true
+      ) {
+        return res.status(403).json({
+          success: false,
+
+          code:
+            "ADMIN_APPROVAL_REQUIRED",
+
+          message:
+            "Vendor account is not approved.",
+        });
+      }
+
+
+      return res.status(200).json({
+        success: true,
+
+        message:
+          "Vendor profile fetched successfully",
+
+        vendor:
+          safeVendorResponse(
+            vendor
+          ),
+
+        dashboard:
+          resolveDashboard(
+            vendor
+          ),
+      });
+
+    } catch (error) {
+
+      console.error(
+        "❌ Vendor Profile Error:",
+        error
+      );
+
+
+      return res.status(500).json({
+        success: false,
+
+        code:
+          "PROFILE_FAILED",
+
+        message:
+          error?.message ||
+          "Unable to load vendor profile",
+      });
+    }
+  };
+
+
+/* ==========================================================
+   GET ALL VENDORS
+========================================================== */
+
+exports.getAllVendors =
+  async (req, res) => {
+
+    try {
+
+      const vendors =
+        await Vendor.find({})
+          .select("-password")
+          .sort({
+            createdAt: -1,
+          });
+
+
+      return res.status(200).json({
+        success: true,
+
+        count:
+          vendors.length,
+
+        vendors:
+          vendors.map(
+            safeVendorResponse
+          ),
+      });
+
+    } catch (error) {
+
+      console.error(
+        "❌ Get Vendors Error:",
+        error
+      );
+
+
+      return res.status(500).json({
+        success: false,
+
+        message:
+          error?.message ||
+          "Unable to load vendors",
+      });
+    }
+  };
+
+
+/* ==========================================================
+   GET PENDING VENDORS
+
+   ADMIN PANEL WILL USE THIS.
+========================================================== */
+
+exports.getPendingVendors =
+  async (req, res) => {
+
+    try {
+
+      const vendors =
+        await Vendor.find({
+          $or: [
+            {
+              status:
+                "PENDING",
+            },
+
+            {
+              onboardingStatus:
+                "submitted",
+            },
+
+            {
+              onboardingStatus:
+                "under_review",
+            },
+          ],
+        })
+          .select("-password")
+          .sort({
+            createdAt: -1,
+          });
+
+
+      return res.status(200).json({
+        success: true,
+
+        count:
+          vendors.length,
+
+        vendors:
+          vendors.map(
+            safeVendorResponse
+          ),
+      });
+
+    } catch (error) {
+
+      console.error(
+        "❌ Pending Vendors Error:",
+        error
+      );
+
+
+      return res.status(500).json({
+        success: false,
+
+        message:
+          error?.message ||
+          "Unable to load pending vendors",
+      });
+    }
+  };
+
+
+/* ==========================================================
+   APPROVE VENDOR
+
+   ADMIN PANEL ACTION
+
+   After this:
+   vendor CAN login.
+========================================================== */
+
+exports.approveVendor =
+  async (req, res) => {
+
+    try {
+
+      const { id } =
+        req.params;
+
+
+      const vendor =
+        await Vendor.findById(
+          id
+        );
+
+
+      if (!vendor) {
+        return res.status(404).json({
+          success: false,
+
+          code:
+            "VENDOR_NOT_FOUND",
+
+          message:
+            "Vendor not found",
+        });
+      }
+
+
+      /*
+       * Do not approve suspended vendor accidentally.
+       */
+
+      if (
+        String(
+          vendor.status || ""
+        ).toUpperCase() ===
+          "SUSPENDED"
+      ) {
+        return res.status(409).json({
+          success: false,
+
+          code:
+            "VENDOR_SUSPENDED",
+
+          message:
+            "Suspended vendor cannot be approved directly.",
+        });
+      }
+
+
+      /* ==================================================
+         ADMIN APPROVAL
+      ================================================== */
+
+      vendor.status =
+        "APPROVED";
+
+      vendor.isApproved =
+        true;
+
+      vendor.isActive =
+        true;
+
+      vendor.accountStatus =
+        "active";
+
+      vendor.onboardingStatus =
+        "approved";
+
+      vendor.onboardingComplete =
+        true;
+
+      vendor.onboardingProgress =
+        100;
+
+
+      await vendor.save();
+
+
+      return res.status(200).json({
+        success: true,
+
+        code:
+          "VENDOR_APPROVED",
+
+        message:
+          "Vendor approved successfully. Vendor can now sign in.",
+
+        vendor:
+          safeVendorResponse(
+            vendor
+          ),
+
+        dashboard:
+          resolveDashboard(
+            vendor
+          ),
+      });
+
+    } catch (error) {
+
+      console.error(
+        "❌ Approve Vendor Error:",
+        error
+      );
+
+
+      return res.status(500).json({
+        success: false,
+
+        code:
+          "APPROVE_VENDOR_FAILED",
+
+        message:
+          error?.message ||
+          "Unable to approve vendor",
+      });
+    }
+  };
+
+
+/* ==========================================================
+   REJECT VENDOR
+
+   ADMIN PANEL ACTION
+
+   Rejected vendor cannot login.
+========================================================== */
+
+exports.rejectVendor =
+  async (req, res) => {
+
+    try {
+
+      const { id } =
+        req.params;
+
+
+      const vendor =
+        await Vendor.findById(
+          id
+        );
+
+
+      if (!vendor) {
+        return res.status(404).json({
+          success: false,
+
+          code:
+            "VENDOR_NOT_FOUND",
+
+          message:
+            "Vendor not found",
+        });
+      }
+
+
+      vendor.status =
+        "REJECTED";
+
+      vendor.isApproved =
+        false;
+
+      vendor.onboardingStatus =
+        "rejected";
+
+
+      /*
+       * Save rejection reason only
+       * if schema contains the field.
+       */
+
+      if (
+        req.body?.reason !==
+        undefined
+      ) {
+
+        if (
+          vendor.schema.path(
+            "rejectionReason"
+          )
+        ) {
+
+          vendor.rejectionReason =
+            normalizeString(
+              req.body.reason
+            );
+        }
+      }
+
+
+      await vendor.save();
+
+
+      return res.status(200).json({
+        success: true,
+
+        code:
+          "VENDOR_REJECTED",
+
+        message:
+          "Vendor rejected successfully",
+
+        vendor:
+          safeVendorResponse(
+            vendor
+          ),
+      });
+
+    } catch (error) {
+
+      console.error(
+        "❌ Reject Vendor Error:",
+        error
+      );
+
+
+      return res.status(500).json({
+        success: false,
+
+        code:
+          "REJECT_VENDOR_FAILED",
+
+        message:
+          error?.message ||
+          "Unable to reject vendor",
+      });
+    }
+  };
