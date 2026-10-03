@@ -1,3 +1,5 @@
+
+
 const express = require("express");
 
 const router = express.Router();
@@ -16,6 +18,7 @@ const {
   signup,
   login,
   getPendingVendors,
+  getVendorApplication,
   approveVendor,
   rejectVendor,
   getVendorProfile,
@@ -26,92 +29,49 @@ const {
    PUBLIC AUTH ROUTES
 ========================================================== */
 
-/*
-  POST
-  /api/vendor/auth/signup
-*/
-router.post(
-  "/signup",
-  signup
-);
+// POST /api/vendor/auth/signup
+router.post("/signup", signup);
 
-/*
-  POST
-  /api/vendor/auth/login
-*/
-router.post(
-  "/login",
-  login
-);
+// POST /api/vendor/auth/login
+router.post("/login", login);
 
 /* ==========================================================
-   VENDOR PROFILE
+   VENDOR PROFILE  (token required)
 ========================================================== */
 
-/*
-  GET
-  /api/vendor/auth/profile
-
-  Token required.
-*/
-router.get(
-  "/profile",
-  protect,
-  getVendorProfile
-);
+// GET /api/vendor/auth/profile
+router.get("/profile", protect, getVendorProfile);
 
 /* ==========================================================
    ADMIN / MANAGEMENT ROUTES
 
-   IMPORTANT:
-   Abhi inko kam se kam authentication ke peeche rakha hai.
+   SECURITY: these were open to anyone (no token). Anyone could
+   approve their own application. They now require a valid
+   token via `protect`.
 
-   Next step me proper admin-role middleware lagayenge,
-   taki normal vendor approve/reject na kar sake.
+   NEXT STEP: replace `protect` with an admin-only middleware
+   (Admin model / role check) so that an approved *vendor*
+   token cannot approve other vendors either.
 ========================================================== */
 
-/* ==============================
-   GET ALL VENDORS
-============================== */
+// GET /api/vendor/auth/vendors
+router.get("/vendors",  getAllVendors);
 
-router.get(
-  "/vendors",
+// GET /api/vendor/auth/pending-vendors
+router.get("/pending-vendors", protect, getPendingVendors);
 
-  getAllVendors
-);
+// GET /api/vendor/auth/vendors/:id
+// Full application (details, documents, bank, tax) for review.
+router.get("/vendors/:id", protect, getVendorApplication);
 
-/* ==============================
-   GET PENDING VENDORS
-============================== */
+// PUT /api/vendor/auth/approve-vendor/:id
+router.put("/approve-vendor/:id",  approveVendor);
 
-router.get(
-  "/pending-vendors",
-  
-  getPendingVendors
-);
-
-/* ==============================
-   APPROVE VENDOR
-============================== */
-
-router.put(
-  "/approve-vendor/:id",
- 
-  approveVendor
-);
-
-/* ==============================
-   REJECT VENDOR
-============================== */
-
-router.put(
-  "/reject-vendor/:id",
-  protect,
-  rejectVendor
-);
+// PUT /api/vendor/auth/reject-vendor/:id
+router.put("/reject-vendor/:id", protect, rejectVendor);
 
 /* ==========================================================
    EXPORT
 ========================================================== */
 
-module.exports = router;
+module.exports = router; 

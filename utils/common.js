@@ -1,6 +1,6 @@
-export const handleError = (res, error) => {
+const handleError = (res, error) => {
   let message = "Server error";
-    console.error("Error:", error);
+  console.error("Error:", error);
   if (error.name === "ValidationError") {
     const firstError = Object.values(error.errors)[0];
     message = firstError.message;
@@ -21,3 +21,5 @@ export const handleError = (res, error) => {
     message
   });
 };
+
+module.exports = { handleError };

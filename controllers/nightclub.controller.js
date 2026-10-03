@@ -1,489 +1,544 @@
-const Nightclub = require("../models/Nightclub");
+const NightClub = require("../models/NightClub.model");
+const cloudinary = require("../config/cloudinary");
 
-/* ============================================================
-   CREATE NIGHTCLUB
-   POST /api/nightclubs
-============================================================ */
-const createNightclub = async (req, res) => {
+// =====================================================
+// HELPERS
+// =====================================================
+
+const getVendorId = (req) =>
+  req.vendor?._id || req.user?._id || req.vendor?.id || req.user?.id;
+
+const uploadToCloudinary = (file, folder, resourceType = "auto") =>
+  new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder, resource_type: resourceType },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result.secure_url);
+      }
+    );
+    stream.end(file.buffer);
+  });
+
+// "a, b, c" or ["a","b"] -> ["a","b","c"]
+const parseList = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value.split(",").map((item) => item.trim()).filter(Boolean);
+  }
+  return [];
+};
+
+// "true" / true -> true, "false" / false -> false, undefined -> fallback
+const parseBool = (value, fallback = false) => {
+  if (value === undefined || value === null || value === "") return fallback;
+  return value === true || value === "true";
+};
+
+const parseNumber = (value, fallback = null) => {
+  if (value === undefined || value === null || value === "") return fallback;
+  const num = Number(value);
+  return Number.isNaN(num) ? fallback : num;
+};
+
+const unauthorized = (res) =>
+  res.status(401).json({ success: false, message: "Authentication required" });
+
+const notFound = (res) =>
+  res.status(404).json({ success: false, message: "Night club not found" });
+
+const serverError = (res, label, error) => {
+  console.error(`${label}:`, error);
+  return res.status(500).json({ success: false, message: error.message });
+};
+
+const BOOLEAN_FIELDS = [
+  "liveDJAvailable",
+  "liveBandAvailable",
+  "danceFloorAvailable",
+  "dressCodeRequired",
+  "stagAllowed",
+  "coupleEntryAvailable",
+  "alcoholAvailable",
+  "parkingAvailable",
+  "valetAvailable",
+  "vipSectionAvailable",
+  "privateBoothAvailable",
+  "smokingAreaAvailable",
+  "wheelchairAccessible",
+];
+
+const NUMBER_FIELDS = ["latitude", "longitude", "totalCapacity", "minimumAge"];
+
+const TEXT_FIELDS = [
+  "name",
+  "description",
+  "venueType",
+  "address",
+  "city",
+  "state",
+  "country",
+  "pincode",
+  "phone",
+  "email",
+  "website",
+  "instagram",
+  "dressCode",
+  "openingTime",
+  "closingTime",
+  "lastEntryTime",
+  "alcoholLicenseNumber",
+  "exciseLicenseNumber",
+  "fireNOCNumber",
+  "cancellationPolicy",
+  "refundPolicy",
+  "entryPolicy",
+];
+
+const LIST_FIELDS = [
+  "musicGenres",
+  "residentDJs",
+  "operatingDays",
+  "prohibitedItems",
+];
+
+// =====================================================
+// CREATE NIGHT CLUB
+// =====================================================
+
+exports.createNightClub = async (req, res) => {
   try {
-    const {
-      clubName,
-      legalBusinessName,
-      description,
+    const vendorId = getVendorId(req);
+    if (!vendorId) return unauthorized(res);
 
-      email,
-      phone,
-      alternatePhone,
-      website,
+    const files = req.files || {};
+    const body = req.body;
 
-      address,
-      landmark,
-      city,
-      state,
-      country,
-      pincode,
-      latitude,
-      longitude,
-
-      businessType,
-      gstNumber,
-      panNumber,
-
-      clubType,
-      capacity,
-      danceFloorAvailable,
-      liveMusicAvailable,
-      djAvailable,
-      vipAvailable,
-      privatePartyAvailable,
-      foodAvailable,
-      parkingAvailable,
-
-      openingTime,
-      closingTime,
-      openDays,
-
-      entryFee,
-      coupleEntryFee,
-      stagEntryFee,
-
-      images,
-      coverImage,
-
-      licenseNumber,
-      licenseDocument,
-
-      accountHolderName,
-      bankName,
-      accountNumber,
-      ifscCode,
-    } = req.body;
-
-    // ==============================
-    // VALIDATION
-    // ==============================
-    if (!clubName || !phone || !address || !city || !state || !pincode) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "clubName, phone, address, city, state and pincode are required",
-      });
+    // ---------- uploads ----------
+    let logo = "";
+    if (files.logo?.[0]) {
+      logo = await uploadToCloudinary(files.logo[0], "nightclubs/logos", "image");
     }
 
-    // Vendor middleware se
-    const vendorId = req.vendor?._id || req.vendor?.id;
-
-    if (!vendorId) {
-      return res.status(401).json({
-        success: false,
-        message: "Vendor authentication required",
-      });
+    let coverImage = "";
+    if (files.coverImage?.[0]) {
+      coverImage = await uploadToCloudinary(files.coverImage[0], "nightclubs/covers", "image");
     }
 
-    // ==============================
-    // CREATE
-    // ==============================
-    const nightclub = await Nightclub.create({
-      vendor: vendorId,
+    let images = [];
+    if (files.images?.length) {
+      images = await Promise.all(
+        files.images.map((file) => uploadToCloudinary(file, "nightclubs/gallery", "image"))
+      );
+    }
 
-      clubName,
-      legalBusinessName,
-      description,
+    let videos = [];
+    if (files.videos?.length) {
+      videos = await Promise.all(
+        files.videos.map((file) => uploadToCloudinary(file, "nightclubs/videos", "video"))
+      );
+    }
 
-      email,
-      phone,
-      alternatePhone,
-      website,
+    let alcoholLicenseDocument = "";
+    if (files.alcoholLicenseDocument?.[0]) {
+      alcoholLicenseDocument = await uploadToCloudinary(
+        files.alcoholLicenseDocument[0], "nightclubs/documents", "auto"
+      );
+    }
 
-      address,
-      landmark,
-      city,
-      state,
-      country: country || "India",
-      pincode,
-      latitude,
-      longitude,
+    let exciseLicenseDocument = "";
+    if (files.exciseLicenseDocument?.[0]) {
+      exciseLicenseDocument = await uploadToCloudinary(
+        files.exciseLicenseDocument[0], "nightclubs/documents", "auto"
+      );
+    }
 
-      businessType,
-      gstNumber,
-      panNumber,
+    let fireNOCDocument = "";
+    if (files.fireNOCDocument?.[0]) {
+      fireNOCDocument = await uploadToCloudinary(
+        files.fireNOCDocument[0], "nightclubs/documents", "auto"
+      );
+    }
 
-      clubType,
-      capacity,
-      danceFloorAvailable,
-      liveMusicAvailable,
-      djAvailable,
-      vipAvailable,
-      privatePartyAvailable,
-      foodAvailable,
-      parkingAvailable,
+    // ---------- create ----------
+    const club = await NightClub.create({
+      vendorId,
 
-      openingTime,
-      closingTime,
-      openDays,
+      name: body.name,
+      description: body.description,
+      venueType: body.venueType,
 
-      entryFee,
-      coupleEntryFee,
-      stagEntryFee,
+      address: body.address,
+      city: body.city,
+      state: body.state,
+      country: body.country,
+      pincode: body.pincode,
+      latitude: parseNumber(body.latitude),
+      longitude: parseNumber(body.longitude),
 
-      images,
+      phone: body.phone,
+      email: body.email,
+      website: body.website,
+      instagram: body.instagram,
+
+      logo,
       coverImage,
+      images,
+      videos,
 
-      licenseNumber,
-      licenseDocument,
+      totalCapacity: parseNumber(body.totalCapacity, 0),
 
-      accountHolderName,
-      bankName,
-      accountNumber,
-      ifscCode,
+      musicGenres: parseList(body.musicGenres),
+      residentDJs: parseList(body.residentDJs),
+      liveDJAvailable: parseBool(body.liveDJAvailable, false),
+      liveBandAvailable: parseBool(body.liveBandAvailable, false),
+      danceFloorAvailable: parseBool(body.danceFloorAvailable, true),
 
-      status: "PENDING",
-      isApproved: false,
+      minimumAge: parseNumber(body.minimumAge, 18),
+      dressCodeRequired: parseBool(body.dressCodeRequired, false),
+      dressCode: body.dressCode,
+      stagAllowed: parseBool(body.stagAllowed, true),
+      coupleEntryAvailable: parseBool(body.coupleEntryAvailable, true),
+
+      operatingDays: parseList(body.operatingDays),
+      openingTime: body.openingTime,
+      closingTime: body.closingTime,
+      lastEntryTime: body.lastEntryTime,
+
+      alcoholAvailable: parseBool(body.alcoholAvailable, false),
+      parkingAvailable: parseBool(body.parkingAvailable, false),
+      valetAvailable: parseBool(body.valetAvailable, false),
+      vipSectionAvailable: parseBool(body.vipSectionAvailable, false),
+      privateBoothAvailable: parseBool(body.privateBoothAvailable, false),
+      smokingAreaAvailable: parseBool(body.smokingAreaAvailable, false),
+      wheelchairAccessible: parseBool(body.wheelchairAccessible, false),
+
+      alcoholLicenseNumber: body.alcoholLicenseNumber,
+      alcoholLicenseDocument,
+      exciseLicenseNumber: body.exciseLicenseNumber,
+      exciseLicenseDocument,
+      fireNOCNumber: body.fireNOCNumber,
+      fireNOCDocument,
+
+      cancellationPolicy: body.cancellationPolicy,
+      refundPolicy: body.refundPolicy,
+      entryPolicy: body.entryPolicy,
+      prohibitedItems: parseList(body.prohibitedItems),
+
+      status: "draft",
+      isPublished: false,
     });
 
     return res.status(201).json({
       success: true,
-      message: "Nightclub registered successfully",
-      data: nightclub,
+      message: "Night club created successfully",
+      data: club,
     });
   } catch (error) {
-    console.error("Create Nightclub Error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to register nightclub",
-    });
+    return serverError(res, "CREATE NIGHT CLUB ERROR", error);
   }
 };
 
+// =====================================================
+// GET MY NIGHT CLUBS
+// =====================================================
 
-/* ============================================================
-   GET ALL NIGHTCLUBS
-   GET /api/nightclubs
-============================================================ */
-const getAllNightclubs = async (req, res) => {
+exports.getMyNightClubs = async (req, res) => {
   try {
-    const {
-      status,
-      city,
-      state,
-      search,
-      page = 1,
-      limit = 10,
-    } = req.query;
+    const vendorId = getVendorId(req);
+    if (!vendorId) return unauthorized(res);
 
-    const filter = {};
-
-    if (status) {
-      filter.status = status.toUpperCase();
-    }
-
-    if (city) {
-      filter.city = new RegExp(city, "i");
-    }
-
-    if (state) {
-      filter.state = new RegExp(state, "i");
-    }
-
-    if (search) {
-      filter.$or = [
-        { clubName: new RegExp(search, "i") },
-        { city: new RegExp(search, "i") },
-        { state: new RegExp(search, "i") },
-      ];
-    }
-
-    const skip = (Number(page) - 1) * Number(limit);
-
-    const total = await Nightclub.countDocuments(filter);
-
-    const nightclubs = await Nightclub.find(filter)
-      .populate("vendor", "name email phone companyName businessName")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit));
+    const clubs = await NightClub.find({ vendorId }).sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,
-      message: "Nightclubs fetched successfully",
-
-      pagination: {
-        total,
-        page: Number(page),
-        limit: Number(limit),
-        totalPages: Math.ceil(total / Number(limit)),
-      },
-
-      data: nightclubs,
+      count: clubs.length,
+      data: clubs,
     });
   } catch (error) {
-    console.error("Get All Nightclubs Error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to fetch nightclubs",
-    });
+    return serverError(res, "GET MY NIGHT CLUBS ERROR", error);
   }
 };
 
+// =====================================================
+// GET SINGLE NIGHT CLUB
+// =====================================================
 
-/* ============================================================
-   GET MY NIGHTCLUBS
-   GET /api/nightclubs/my
-============================================================ */
-const getMyNightclubs = async (req, res) => {
+exports.getNightClubById = async (req, res) => {
   try {
-    const vendorId = req.vendor?._id || req.vendor?.id;
+    const vendorId = getVendorId(req);
+    if (!vendorId) return unauthorized(res);
 
-    if (!vendorId) {
-      return res.status(401).json({
-        success: false,
-        message: "Vendor authentication required",
-      });
+    const club = await NightClub.findOne({ _id: req.params.id, vendorId });
+    if (!club) return notFound(res);
+
+    return res.status(200).json({ success: true, data: club });
+  } catch (error) {
+    return serverError(res, "GET NIGHT CLUB ERROR", error);
+  }
+};
+
+// =====================================================
+// UPDATE NIGHT CLUB
+// =====================================================
+
+exports.updateNightClub = async (req, res) => {
+  try {
+    const vendorId = getVendorId(req);
+    if (!vendorId) return unauthorized(res);
+
+    // _id + vendorId => vendor can update only his own club
+    const club = await NightClub.findOne({ _id: req.params.id, vendorId });
+    if (!club) return notFound(res);
+
+    const body = req.body;
+
+    // ---------- text fields ----------
+    TEXT_FIELDS.forEach((field) => {
+      if (body[field] !== undefined) club[field] = body[field];
+    });
+
+    // ---------- numbers ----------
+    NUMBER_FIELDS.forEach((field) => {
+      if (body[field] !== undefined) {
+        const fallback = field === "minimumAge" ? 18 : field === "totalCapacity" ? 0 : null;
+        club[field] = parseNumber(body[field], fallback);
+      }
+    });
+
+    // ---------- booleans ----------
+    BOOLEAN_FIELDS.forEach((field) => {
+      if (body[field] !== undefined) club[field] = parseBool(body[field]);
+    });
+
+    // ---------- arrays ----------
+    LIST_FIELDS.forEach((field) => {
+      if (body[field] !== undefined) club[field] = parseList(body[field]);
+    });
+
+    // ---------- files ----------
+    const files = req.files || {};
+
+    if (files.logo?.[0]) {
+      club.logo = await uploadToCloudinary(files.logo[0], "nightclubs/logos", "image");
     }
 
-    const nightclubs = await Nightclub.find({
-      vendor: vendorId,
-    }).sort({
-      createdAt: -1,
-    });
+    if (files.coverImage?.[0]) {
+      club.coverImage = await uploadToCloudinary(files.coverImage[0], "nightclubs/covers", "image");
+    }
+
+    if (files.images?.length) {
+      const newImages = await Promise.all(
+        files.images.map((file) => uploadToCloudinary(file, "nightclubs/gallery", "image"))
+      );
+      club.images = [...(club.images || []), ...newImages];
+    }
+
+    if (files.videos?.length) {
+      const newVideos = await Promise.all(
+        files.videos.map((file) => uploadToCloudinary(file, "nightclubs/videos", "video"))
+      );
+      club.videos = [...(club.videos || []), ...newVideos];
+    }
+
+    if (files.alcoholLicenseDocument?.[0]) {
+      club.alcoholLicenseDocument = await uploadToCloudinary(
+        files.alcoholLicenseDocument[0], "nightclubs/documents", "auto"
+      );
+    }
+
+    if (files.exciseLicenseDocument?.[0]) {
+      club.exciseLicenseDocument = await uploadToCloudinary(
+        files.exciseLicenseDocument[0], "nightclubs/documents", "auto"
+      );
+    }
+
+    if (files.fireNOCDocument?.[0]) {
+      club.fireNOCDocument = await uploadToCloudinary(
+        files.fireNOCDocument[0], "nightclubs/documents", "auto"
+      );
+    }
+
+    // ---------- re-review ----------
+    // Draft stays draft (vendor submits when ready).
+    // Any other status goes back to pending for admin review.
+    const wasDraft = club.status === "draft";
+
+    if (!wasDraft) {
+      club.status = "pending";
+      club.isPublished = false;
+      club.rejectionReason = "";
+    }
+
+    await club.save();
 
     return res.status(200).json({
       success: true,
-      count: nightclubs.length,
-      data: nightclubs,
+      message: wasDraft
+        ? "Night club updated successfully"
+        : "Night club updated successfully and sent for review",
+      data: club,
     });
   } catch (error) {
-    console.error("Get My Nightclubs Error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to fetch your nightclubs",
-    });
+    return serverError(res, "UPDATE NIGHT CLUB ERROR", error);
   }
 };
 
+// =====================================================
+// DELETE NIGHT CLUB
+// =====================================================
 
-/* ============================================================
-   GET SINGLE NIGHTCLUB
-   GET /api/nightclubs/:id
-============================================================ */
-const getNightclubById = async (req, res) => {
+exports.deleteNightClub = async (req, res) => {
   try {
-    const nightclub = await Nightclub.findById(req.params.id).populate(
-      "vendor",
-      "name email phone companyName businessName"
-    );
+    const vendorId = getVendorId(req);
+    if (!vendorId) return unauthorized(res);
 
-    if (!nightclub) {
-      return res.status(404).json({
-        success: false,
-        message: "Nightclub not found",
-      });
-    }
+    const club = await NightClub.findOneAndDelete({ _id: req.params.id, vendorId });
+    if (!club) return notFound(res);
 
     return res.status(200).json({
       success: true,
-      data: nightclub,
+      message: "Night club deleted successfully",
     });
   } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to fetch nightclub",
-    });
+    return serverError(res, "DELETE NIGHT CLUB ERROR", error);
   }
 };
 
+// =====================================================
+// REMOVE ONE IMAGE / VIDEO
+// =====================================================
 
-/* ============================================================
-   UPDATE NIGHTCLUB
-   PUT /api/nightclubs/:id
-============================================================ */
-const updateNightclub = async (req, res) => {
+exports.removeNightClubMedia = async (req, res) => {
   try {
-    const vendorId = req.vendor?._id || req.vendor?.id;
+    const vendorId = getVendorId(req);
+    if (!vendorId) return unauthorized(res);
 
-    const nightclub = await Nightclub.findById(req.params.id);
+    const { type, url } = req.body;
 
-    if (!nightclub) {
-      return res.status(404).json({
+    if (!["images", "videos"].includes(type) || !url) {
+      return res.status(400).json({
         success: false,
-        message: "Nightclub not found",
+        message: "type (images | videos) and url are required",
       });
     }
 
-    // Sirf owner update kare
-    if (nightclub.vendor.toString() !== vendorId.toString()) {
+    const club = await NightClub.findOne({ _id: req.params.id, vendorId });
+    if (!club) return notFound(res);
+
+    club[type] = (club[type] || []).filter((item) => item !== url);
+    await club.save();
+
+    return res.status(200).json({ success: true, data: club });
+  } catch (error) {
+    return serverError(res, "REMOVE MEDIA ERROR", error);
+  }
+};
+
+// =====================================================
+// SUBMIT FOR ADMIN APPROVAL
+// =====================================================
+
+exports.submitNightClub = async (req, res) => {
+  try {
+    const vendorId = getVendorId(req);
+    if (!vendorId) return unauthorized(res);
+
+    const club = await NightClub.findOne({ _id: req.params.id, vendorId });
+    if (!club) return notFound(res);
+
+    if (club.status === "pending") {
+      return res.status(400).json({
+        success: false,
+        message: "Night club is already pending for approval",
+      });
+    }
+
+    if (club.status === "approved") {
+      return res.status(400).json({
+        success: false,
+        message: "Night club is already approved",
+      });
+    }
+
+    if (!club.name || !club.address || !club.city) {
+      return res.status(400).json({
+        success: false,
+        message: "Please complete club name, address and city before submitting",
+      });
+    }
+
+    club.status = "pending";
+    club.isPublished = false;
+    club.rejectionReason = "";
+
+    await club.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Night club submitted for admin approval",
+      data: club,
+    });
+  } catch (error) {
+    return serverError(res, "SUBMIT NIGHT CLUB ERROR", error);
+  }
+};
+
+// =====================================================
+// PUBLISH
+// =====================================================
+
+exports.publishNightClub = async (req, res) => {
+  try {
+    const vendorId = getVendorId(req);
+    if (!vendorId) return unauthorized(res);
+
+    const club = await NightClub.findOne({ _id: req.params.id, vendorId });
+    if (!club) return notFound(res);
+
+    if (club.status !== "approved") {
       return res.status(403).json({
         success: false,
-        message: "You are not authorized to update this nightclub",
+        message: "Night club must be approved by admin first",
       });
     }
 
-    // Approval ke baad changes dobara review me jayenge
-    delete req.body.vendor;
-    delete req.body.isApproved;
-
-    const updatedNightclub = await Nightclub.findByIdAndUpdate(
-      req.params.id,
-      {
-        $set: {
-          ...req.body,
-          status: "PENDING",
-          rejectionReason: "",
-        },
-      },
-      {
-        new: true,
-        runValidators: true,
-      }
-    );
+    club.isPublished = true;
+    await club.save();
 
     return res.status(200).json({
       success: true,
-      message: "Nightclub updated successfully and sent for review",
-      data: updatedNightclub,
+      message: "Night club published successfully",
+      data: club,
     });
   } catch (error) {
-    console.error("Update Nightclub Error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to update nightclub",
-    });
+    return serverError(res, "PUBLISH NIGHT CLUB ERROR", error);
   }
 };
 
+// =====================================================
+// UNPUBLISH
+// =====================================================
 
-/* ============================================================
-   DELETE NIGHTCLUB
-   DELETE /api/nightclubs/:id
-============================================================ */
-const deleteNightclub = async (req, res) => {
+exports.unpublishNightClub = async (req, res) => {
   try {
-    const vendorId = req.vendor?._id || req.vendor?.id;
+    const vendorId = getVendorId(req);
+    if (!vendorId) return unauthorized(res);
 
-    const nightclub = await Nightclub.findById(req.params.id);
+    const club = await NightClub.findOne({ _id: req.params.id, vendorId });
+    if (!club) return notFound(res);
 
-    if (!nightclub) {
-      return res.status(404).json({
-        success: false,
-        message: "Nightclub not found",
-      });
-    }
-
-    if (nightclub.vendor.toString() !== vendorId.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: "You are not authorized to delete this nightclub",
-      });
-    }
-
-    await Nightclub.findByIdAndDelete(req.params.id);
+    club.isPublished = false;
+    await club.save();
 
     return res.status(200).json({
       success: true,
-      message: "Nightclub deleted successfully",
+      message: "Night club unpublished successfully",
+      data: club,
     });
   } catch (error) {
-    console.error("Delete Nightclub Error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to delete nightclub",
-    });
+    return serverError(res, "UNPUBLISH NIGHT CLUB ERROR", error);
   }
-};
-
-
-/* ============================================================
-   ADMIN APPROVE
-   PUT /api/nightclubs/:id/approve
-============================================================ */
-const approveNightclub = async (req, res) => {
-  try {
-    const nightclub = await Nightclub.findByIdAndUpdate(
-      req.params.id,
-      {
-        status: "APPROVED",
-        isApproved: true,
-        rejectionReason: "",
-      },
-      {
-        new: true,
-      }
-    );
-
-    if (!nightclub) {
-      return res.status(404).json({
-        success: false,
-        message: "Nightclub not found",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Nightclub approved successfully",
-      data: nightclub,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to approve nightclub",
-    });
-  }
-};
-
-
-/* ============================================================
-   ADMIN REJECT
-   PUT /api/nightclubs/:id/reject
-============================================================ */
-const rejectNightclub = async (req, res) => {
-  try {
-    const { rejectionReason } = req.body;
-
-    const nightclub = await Nightclub.findByIdAndUpdate(
-      req.params.id,
-      {
-        status: "REJECTED",
-        isApproved: false,
-        rejectionReason: rejectionReason || "",
-      },
-      {
-        new: true,
-      }
-    );
-
-    if (!nightclub) {
-      return res.status(404).json({
-        success: false,
-        message: "Nightclub not found",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Nightclub rejected",
-      data: nightclub,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to reject nightclub",
-    });
-  }
-};
-
-
-module.exports = {
-  createNightclub,
-  getAllNightclubs,
-  getMyNightclubs,
-  getNightclubById,
-  updateNightclub,
-  deleteNightclub,
-  approveNightclub,
-  rejectNightclub,
 };

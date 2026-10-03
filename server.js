@@ -1,8 +1,6 @@
 
-
 require("dotenv").config();
 
-// 🔥 MongoDB DNS FIX (SRV issue fix)
 const dns = require("dns");
 dns.setDefaultResultOrder("ipv4first");
 
@@ -14,38 +12,35 @@ const compression = require("compression");
 
 const connectDB = require("./config/db");
 
-// custom routes
-const palaceRoutes = require("./routes/palaceRoutes");
-
-const vacationHouseRoutes = require("./routes/vacationHouseRoutes");
-const motelVendorRoutes = require("./routes/motelVendorRoutes");
-const hotelBookingRoutes = require("./routes/hotelBooking.routes");
 const app = express();
 
 /* ==============================
-   🔐 SECURITY + PERFORMANCE
+   🛡️ MIDDLEWARES
 ============================== */
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "Accept",
+      "Origin",
+    ],
+    optionsSuccessStatus: 200,
+  })
+);
+
 app.use(
   helmet({
     crossOriginResourcePolicy: false,
+    crossOriginOpenerPolicy: false,
   })
 );
 app.use(compression());
 app.use(morgan("dev"));
-
-/* ==============================
-   🌍 CORS
-============================== */
-app.use(
-  cors({
-    origin: [
-      "http://localhost:3001",
-      "http://localhost:7000",
-      "http://localhost:3000",
-    ],
-    credentials: true,
-  })
-);
 
 /* ==============================
    📦 BODY PARSER
@@ -59,208 +54,173 @@ app.use(express.urlencoded({ extended: true }));
 connectDB();
 
 /* ==============================
-   🚀 ROUTES
+   🧩 SAFE ROUTE LOADER
+   - file missing ho ya router export na ho to server crash nahi hoga
+   - console me exact file ka naam dikhega
 ============================== */
+function loadRouter(file, exportName) {
+  let mod;
+  try {
+    mod = require(file);
+  } catch (err) {
+    console.error(`❌ Cannot load ${file}: ${err.message}`);
+    return null;
+  }
 
-// AUTH + MAIN
-app.use("/api/vendor/auth", require("./routes/auth.routes"));
+  const candidates = [
+    exportName && mod && mod[exportName],
+    mod,
+    mod && mod.default,
+    mod && mod.router,
+  ].filter(Boolean);
 
-// HOTELS
-app.use("/api/vendor/hotels", require("./routes/hotel.routes"));
-const hotelRoomRoutes = require("./routes/HotelRoom.routes");
-app.use("/api/hotel-rooms", hotelRoomRoutes);
-app.use("/api/hotel-booking", hotelBookingRoutes);
-const hotelInventoryRoutes = require("./routes/HotelInventory.routes");
+  const router = candidates.find((c) => typeof c === "function");
 
-app.use("/api/hotel-inventory", hotelInventoryRoutes);
+  if (!router) {
+    console.error(
+      `❌ ${file} does not export a valid router` +
+        (exportName ? ` (looking for "${exportName}")` : "") +
+        `. Found exports: [${Object.keys(mod || {}).join(", ")}]`
+    );
+    return null;
+  }
+  return router;
+}
 
-const nightclubRoutes = require("./routes/nightclub.routes");
+/* ==============================
+   🚀 ROUTES TABLE
+   [ path, file, (optional) named export ]
+   Order matters: upar wale pehle mount hote hain
+============================== */
+const routes = [
+  // AUTH
+  ["/api/vendor/auth", "./routes/auth.routes"],
+  ["/api/user/auth", "./routes/userAuth.routes"],
+  ["/api/bmt-partner/auth", "./routes/bmtPartnerAuth.routes"],
 
-app.use("/api/nightclubs", nightclubRoutes);
-// CABS
-app.use("/api/vendor/cabs", require("./routes/cab.routes"));
-app.use("/api/cabs", require("./routes/cabBooking.routes"));
-// app.use("/api/vendor/cabs-booking", require("./routes/vendorCabBooking.routes")); // ✅ FIX
+  // UPLOAD
+["/api/upload", "./routes/Upload.routes"],
 
-// BUS
-app.use("/api/buses", require("./routes/bus.routes"));
-const busSeatLayoutRoutes = require(
-  "./routes/busSeatLayout.routes"
-);
+  // TOURS
+  ["/api/vendor/tours", "./routes/tour.routes"],
+  ["/api/vendor/tour-bookings", "./routes/tourBooking.routes"],
+  ["/api/customer/tour-bookings", "./routes/tourBooking.routes"],
+  ["/api/customer/tour-queries", "./routes/tourQuery.routes", "customerTourQueryRoutes"],
+  ["/api/vendor/tour-queries", "./routes/tourQuery.routes", "vendorTourQueryRoutes"],
+  ["/api/vendor/tour-schedules", "./routes/tourSchedule.routes"],
+  ["/api/tour-reviews", "./routes/tourReview.routes"],
 
-app.use(
-  "/api/bus-seat-layouts",
-  busSeatLayoutRoutes
-);
-const busTripRoutes = require(
-  "./routes/busTrip.routes"
-);
+  // ACTIVITIES
+  ["/api/vendor/activities", "./routes/activity.routes"],
+  ["/api/vendor/activity-schedules", "./routes/activitySchedule.routes"],
+  ["/api/activity-bookings", "./routes/activityBooking.routes"],
 
-app.use(
-  "/api/bus-trips",
-  busTripRoutes
-);
-app.use("/api/bus-bookings", require("./routes/busBooking.routes"));
+  // HOTELS
+  ["/api/vendor/hotels", "./routes/hotel.routes"],
+  ["/api/hotel-rooms", "./routes/HotelRoom.routes"],
+  ["/api/hotel-booking", "./routes/hotelBooking.routes"],
+  ["/api/hotel-inventory", "./routes/HotelInventory.routes"],
 
-// FLIGHT
-app.use("/api/flights", require("./routes/flight.routes"));
-app.use("/api/flight-bookings", require("./routes/flightBooking.routes"));
+  // NIGHTCLUBS
+  ["/api/vendor/nightclubs", "./routes/nightclub.routes"],
+  ["/api/nightclubs", "./routes/nightclub.routes"], // alias
+  ["/api/nightclub-events", "./routes/nightClubEvent.routes"],
+  ["/api/nightclub-event-tickets", "./routes/nightclubEventTicket.routes"],
+  ["/api/nightclub-event-bookings", "./routes/nightclubEventBooking.routes"],
+  ["/api/vendor/nightclub-tables", "./routes/nightClubTable.routes"],
+  ["/api/nightclub-table-pricing", "./routes/nightClubTablePricing.routes"],
 
-// HOMESTAY
-app.use("/api/vendor/homestay", require("./routes/homestay.routes"));
-app.use("/api/homestay-bookings", require("./routes/homestayBooking.routes"));
+  // DARSHAN
+  ["/api/vendor/darshans", "./routes/darshan.routes"],
+  ["/api/vendor/darshan-types", "./routes/darshanType.routes"],
+  ["/api/vendor/darshan-slots", "./routes/darshanSlot.routes"],
+  ["/api/vendor/darshan-slot-availability", "./routes/darshanSlotAvailability.routes"],
+  ["/api/darshan-bookings", "./routes/darshanBooking.routes"],
+  ["/api/vendor/darshans", "./routes/vendorDarshanRoutes"], // legacy
 
-// HOLIDAY
-app.use("/api/vendor/holidays", require("./routes/holiday.routes"));
-app.use("/api/vendor/bnb", require("./routes/bnbRoutes"));
-app.use("/api/holiday-bookings", require("./routes/holidayBooking.routes"));
+  // CABS
+  ["/api/vendor/cabs", "./routes/cab.routes"],
+  ["/api/cabs", "./routes/cabBooking.routes"],
 
-// DARSHAN + APARTMENT
-app.use("/api/vendor/darshans", require("./routes/vendorDarshanRoutes"));
-app.use("/api/vendor/apartment", require("./routes/Apartment.routes"));
+  // BUS
+  ["/api/buses", "./routes/bus.routes"],
+  ["/api/bus-types", "./routes/busType.routes"],
+  ["/api/bus-seat-layouts", "./routes/busSeatLayout.routes"],
+  ["/api/bus-trips", "./routes/busTrip.routes"],
+  ["/api/bus-bookings", "./routes/busBooking.routes"],
 
-// CUSTOM
-app.use("/api/vacation-house", vacationHouseRoutes);
-app.use("/api/palaces", palaceRoutes);
-const palaceRoomCategoryRoutes = require("./routes/palaceRoomCategoryRoutes");
-app.use(
-  "/api/palace-room-categories",
-  palaceRoomCategoryRoutes
-);
-const palaceRoomUnitRoutes = require(
-  "./routes/palaceRoomUnitRoutes"
-);
-app.use(
-  "/api/bmt-partner/auth",
-  require(
-    "./routes/bmtPartnerAuth.routes"
-  )
-);
+  // FLIGHT
+  ["/api/flights", "./routes/flight.routes"],
+  ["/api/flight-bookings", "./routes/flightBooking.routes"],
 
-app.use(
-  "/api/palace-room-units",
-  palaceRoomUnitRoutes
-);
-const palaceRatePlanRoutes = require(
-  "./routes/palaceRatePlanRoutes"
-);
+  // HOMESTAY
+  ["/api/vendor/homestay", "./routes/homestay.routes"],
+  ["/api/homestay-units", "./routes/homestayUnit.routes"],
+  ["/api/homestay-inventory", "./routes/homestayInventory.routes"],
+  ["/api/homestay-bookings", "./routes/homestayBooking.routes"],
+  ["/api/homestay-reviews", "./routes/homestayReview.routes"],
 
-app.use(
-  "/api/palace-rate-plans",
-  palaceRatePlanRoutes
-);
-const palaceInventoryRoutes =
-  require("./routes/palaceInventoryRoutes");
+  // HOLIDAY / BNB
+  ["/api/vendor/holidays", "./routes/holiday.routes"],
+  ["/api/vendor/bnb", "./routes/bnbRoutes"],
+  ["/api/holiday-bookings", "./routes/holidayBooking.routes"],
 
-app.use(
-  "/api/palace-inventory",
-  palaceInventoryRoutes
-);
+  // APARTMENT
+  ["/api/vendor/apartment", "./routes/Apartment.routes"],
+  ["/api/apartment-inventory", "./routes/apartmentInventory.routes"],
+  ["/api/apartment-rate-plans", "./routes/apartmentRatePlan.routes"],
+  ["/api/apartment-dynamic-pricing", "./routes/apartmentDynamicPricing.routes"],
+  ["/api/apartment-bookings", "./routes/apartmentBooking.routes"],
 
+  // VACATION HOUSE / PALACE / MOTEL
+  ["/api/vacation-house", "./routes/vacationHouseRoutes"],
+  ["/api/palaces", "./routes/palaceRoutes"],
+  ["/api/palace-room-categories", "./routes/palaceRoomCategoryRoutes"],
+  ["/api/palace-room-units", "./routes/palaceRoomUnitRoutes"],
+  ["/api/palace-rate-plans", "./routes/palaceRatePlanRoutes"],
+  ["/api/palace-inventory", "./routes/palaceInventoryRoutes"],
+  ["/api/motel-vendors", "./routes/motelVendorRoutes"],
 
-app.use("/api/motel-vendors", motelVendorRoutes);
-const homestayUnitRoutes = require("./routes/homestayUnit.routes");
+  // RESORT
+  ["/api/resorts", "./routes/resort.routes"],
+  ["/api/resort-rooms", "./routes/resortRoom.routes"],
+  ["/api/resort-room-units", "./routes/resortRoomUnit.routes"],
+  ["/api/resort-inventory", "./routes/resortInventory.routes"],
+  ["/api/resort-rate-plans", "./routes/resortRatePlan.routes"],
+  ["/api/resort-pricing", "./routes/resortPricing.routes"],
+  ["/api/resort-bookings", "./routes/resortBooking.routes"],
+  ["/api/resort-reviews", "./routes/resortReview.routes"],
 
-app.use("/api/homestay-units", homestayUnitRoutes);
-const homestayInventoryRoutes = require("./routes/homestayInventory.routes");
+  // CAMPSITE
+  ["/api/vendor/campsite", "./routes/vendorCampsite.routes"],
 
-app.use(
-  "/api/homestay-inventory",
-  homestayInventoryRoutes
-);
-const homestayBookingRoutes = require("./routes/homestayBooking.routes");
-app.use(
-  "/api/homestay-bookings",
-  homestayBookingRoutes
-);
-const homestayReviewRoutes = require("./routes/homestayReview.routes");
-app.use("/api/homestay-reviews", homestayReviewRoutes);
-const resortRoutes = require("./routes/resort.routes");
-app.use("/api/resorts", resortRoutes);
-const campsiteRoutes = require("./routes/vendorCampsite.routes");
-const resortRoomRoutes = require("./routes/resortRoom.routes");
-app.use("/api/resort-rooms", resortRoomRoutes);
-const resortRoomUnitRoutes = require("./routes/resortRoomUnit.routes");
+  // CRUISE
+  ["/api/vendor/cruise/ships", "./routes/cruiseShip.routes"],
+  ["/api/cruise-cabins", "./routes/cruiseCabin.routes"],
+  ["/api/cruise-itineraries", "./routes/cruiseItinerary.routes"],
+  ["/api/cruise-sailings", "./routes/cruiseSailing.routes"],
+  ["/api/cruise-pricings", "./routes/cruisePricing.routes"],
+  ["/api/cruise-availabilities", "./routes/cruiseAvailability.routes"],
+  ["/api/customer/cruise-bookings", "./routes/cruiseBooking.routes"],
+];
 
-app.use(
-  "/api/resort-room-units",
-  resortRoomUnitRoutes
-);
-const resortInventoryRoutes = require(
-  "./routes/resortInventory.routes"
-);
+const failedRoutes = [];
 
-app.use(
-  "/api/resort-inventory",
-  resortInventoryRoutes
-);
-const resortRatePlanRoutes = require(
-  "./routes/resortRatePlan.routes"
-);
+routes.forEach(([path, file, exportName]) => {
+  const router = loadRouter(file, exportName);
+  if (router) {
+    app.use(path, router);
+  } else {
+    failedRoutes.push(`${path}  ->  ${file}${exportName ? " [" + exportName + "]" : ""}`);
+  }
+});
 
-const resortPricingRoutes = require(
-  "./routes/resortPricing.routes"
-);
+if (failedRoutes.length) {
+  console.error("\n⚠️  These routes were SKIPPED (fix the route files):");
+  failedRoutes.forEach((r) => console.error("   - " + r));
+  console.error("");
+}
 
-
-app.use(
-  "/api/resort-rate-plans",
-  resortRatePlanRoutes
-);
-
-app.use(
-  "/api/resort-pricing",
-  resortPricingRoutes
-);
-const resortBookingRoutes = require(
-  "./routes/resortBooking.routes"
-);
-
-app.use(
-  "/api/resort-bookings",
-  resortBookingRoutes
-);
-const resortReviewRoutes = require(
-  "./routes/resortReview.routes"
-);
-
-app.use(
-  "/api/resort-reviews",
-  resortReviewRoutes
-);
-const apartmentInventoryRoutes = require(
-  "./routes/apartmentInventory.routes"
-);
-
-app.use(
-  "/api/apartment-inventory",
-  apartmentInventoryRoutes
-);
-const apartmentRatePlanRoutes = require(
-  "./routes/apartmentRatePlan.routes"
-);
-
-app.use(
-  "/api/apartment-rate-plans",
-  apartmentRatePlanRoutes
-);
-const apartmentDynamicPricingRoutes = require(
-  "./routes/apartmentDynamicPricing.routes"
-);
-
-app.use(
-  "/api/apartment-dynamic-pricing",
-  apartmentDynamicPricingRoutes
-);
-const apartmentBookingRoutes = require(
-  "./routes/apartmentBooking.routes"
-);
-
-app.use(
-  "/api/apartment-bookings",
-  apartmentBookingRoutes
-);
-app.use("/api/vendor/campsite", campsiteRoutes);
 /* ==============================
    ❤️ HEALTH CHECK
 ============================== */
@@ -269,7 +229,7 @@ app.get("/", (req, res) => {
 });
 
 /* ==============================
-   ❌ API 404 HANDLER (FIXED)
+   ❌ 404 HANDLERS (always AFTER routes)
 ============================== */
 app.use("/api", (req, res) => {
   res.status(404).json({
@@ -278,9 +238,6 @@ app.use("/api", (req, res) => {
   });
 });
 
-/* ==============================
-   ❌ GLOBAL 404
-============================== */
 app.use((req, res) => {
   res.status(404).json({
     success: false,

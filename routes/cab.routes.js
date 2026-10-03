@@ -11,6 +11,8 @@ const {
   deleteCab,
   toggleCabStatus,
   searchCabs,
+  getVendorDrivers,
+  updateCabDriver,
 } = require("../controllers/cab.controller");
 
 /* =========================================================
@@ -31,25 +33,40 @@ const cabUpload = upload.fields([
 router.get("/search", searchCabs);
 
 /* =========================================================
-   VENDOR ROUTES
+   VENDOR DRIVER ROUTES
+   IMPORTANT: Must come before /:id so 'drivers' is not treated as an ID
+========================================================= */
+
+router.get("/drivers", protect, getVendorDrivers);
+router.get("/vendor/drivers", protect, getVendorDrivers);
+router.put("/drivers/:cabId", protect, updateCabDriver);
+router.put("/vendor/drivers/:cabId", protect, updateCabDriver);
+
+/* =========================================================
+   VENDOR CAB ROUTES
 ========================================================= */
 
 // Add new cab
 router.post("/", protect, cabUpload, addCab);
 
-// Get logged-in vendor's all cabs
+// Get logged-in vendor's all cabs (both / and /vendor/my-cabs supported)
+router.get("/", protect, getVendorCabs);
 router.get("/vendor/my-cabs", protect, getVendorCabs);
 
 // Get single cab of logged-in vendor
 router.get("/vendor/:id", protect, getCabById);
+router.get("/:id", protect, getCabById);
 
 // Update cab
 router.put("/vendor/:id", protect, cabUpload, updateCab);
+router.put("/:id", protect, cabUpload, updateCab);
 
 // Delete cab
 router.delete("/vendor/:id", protect, deleteCab);
+router.delete("/:id", protect, deleteCab);
 
 // Activate / Deactivate cab
 router.patch("/vendor/:id/toggle-status", protect, toggleCabStatus);
+router.patch("/:id/toggle-status", protect, toggleCabStatus);
 
 module.exports = router;

@@ -104,7 +104,7 @@ const uploadToCloudinary = async (filePath, folder) => {
 ========================================================= */
 
 const calculateCabPrice = (data) => {
-  const baseFare = toNumber(data.baseFare);
+  const baseFare = toNumber(data.baseFare || data.price);
 
   const distanceKm = toNumber(data.distanceKm);
 
@@ -350,10 +350,21 @@ exports.addCab = async (req, res) => {
       toCity: d.toCity || "",
 
       pickupLocation:
-        d.pickupLocation || "",
+        d.pickupLocation || d.baseLocation || "",
 
       dropLocation:
         d.dropLocation || "",
+
+      baseLocation:
+        d.baseLocation || d.pickupLocation || "",
+
+      serviceRadiusKm: toNumber(
+        d.serviceRadiusKm,
+        40
+      ),
+
+      operatingArea:
+        d.operatingArea || d.serviceArea || "",
 
       viaCities: parseArray(
         d.viaCities
@@ -478,6 +489,11 @@ exports.addCab = async (req, res) => {
           driver.experienceYears ||
           d.driverExperience
         ),
+
+        photo:
+          driver.photo ||
+          d.driverPhoto ||
+          "",
       },
 
       /* DOCUMENTS */
@@ -555,6 +571,13 @@ exports.addCab = async (req, res) => {
       "ADD CAB ERROR:",
       error
     );
+
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: "A cab with this vehicle plate number already exists in the system.",
+      });
+    }
 
     return res.status(500).json({
       success: false,
@@ -731,6 +754,9 @@ exports.updateCab = async (
       "toCity",
       "pickupLocation",
       "dropLocation",
+      "baseLocation",
+      "serviceRadiusKm",
+      "operatingArea",
       "pickupDate",
       "pickupTime",
       "dropDate",
@@ -751,6 +777,7 @@ exports.updateCab = async (
       "gstPercentage",
       "discount",
       "currency",
+      "price",
       "cancellationPolicy",
       "termsAndConditions",
     ];
@@ -767,6 +794,7 @@ exports.updateCab = async (
           [
             "modelYear",
             "distanceKm",
+            "serviceRadiusKm",
             "totalSeats",
             "availableSeats",
             "luggageCapacity",
@@ -780,6 +808,7 @@ exports.updateCab = async (
             "tollCharge",
             "gstPercentage",
             "discount",
+            "price",
           ].includes(field)
         ) {
 
@@ -878,6 +907,30 @@ exports.updateCab = async (
     ) {
       cab.driver.licenseNumber =
         d.driverLicenseNumber;
+    }
+
+    if (d.driverAlternatePhone !== undefined) {
+      cab.driver.alternatePhone = d.driverAlternatePhone;
+    }
+
+    if (d.driverExperience !== undefined) {
+      cab.driver.experienceYears = toNumber(d.driverExperience);
+    }
+
+    if (d.driverPhoto !== undefined) {
+      cab.driver.photo = d.driverPhoto;
+    }
+
+    if (d.baseLocation !== undefined) {
+      cab.baseLocation = d.baseLocation;
+    }
+
+    if (d.serviceRadiusKm !== undefined) {
+      cab.serviceRadiusKm = toNumber(d.serviceRadiusKm, 40);
+    }
+
+    if (d.operatingArea !== undefined) {
+      cab.operatingArea = d.operatingArea;
     }
 
 
@@ -1083,6 +1136,132 @@ exports.toggleCabStatus = async (
     return res.status(500).json({
       success: false,
       message: error.message,
+    });
+  }
+};
+
+
+/* =========================================================
+   GET VENDOR DRIVERS
+   GET /api/vendor/cabs/drivers
+========================================================= */
+
+exports.getVendorDrivers = async (req, res) => {
+  try {
+    const cabs = await Cab.find({ vendor: req.vendor._id }).sort({ createdAt: -1 });
+
+    const driversList = [];
+
+    cabs.forEach((cab) => {
+      const driver = cab.driver || {};
+      const name = driver.name || cab.driverName || "";
+      const phone = driver.phone || cab.driverPhone || "";
+
+      driversList.push({
+        _id: cab._id,
+        cabId: cab._id,
+        vehicleNumber: cab.vehicleNumber || "",
+        cabType: cab.cabType || "Sedan",
+        brand: cab.brand || "",
+        model: cab.model || "",
+        vehicleColor: cab.vehicleColor || "",
+        baseLocation: cab.baseLocation || cab.pickupLocation || cab.fromCity || "Primary Hub",
+        serviceRadiusKm: cab.serviceRadiusKm || 40,
+        isActive: cab.isActive !== false,
+        driverName: name,
+        driverPhone: phone,
+        driverAlternatePhone: driver.alternatePhone || cab.driverAlternatePhone || "",
+        driverLicenseNumber: driver.licenseNumber || cab.driverLicenseNumber || "",
+        experienceYears: driver.experienceYears || cab.driverExperience || 0,
+        driverPhoto: driver.photo || cab.driverPhoto || "",
+        isAssigned: Boolean(name || phone),
+        createdAt: cab.createdAt,
+      });
+    });
+
+    const profileDriver = req.vendor?.cabDetails?.driverName ? {
+      isVendorOwner: true,
+      driverName: req.vendor.cabDetails.driverName,
+      driverPhone: req.vendor.cabDetails.driverPhone,
+      driverDob: req.vendor.cabDetails.driverDob,
+      driverLicenseNumber: req.vendor.cabDetails.drivingLicenceNumber,
+      licenceExpiryDate: req.vendor.cabDetails.licenceExpiryDate,
+      experienceYears: req.vendor.cabDetails.experienceYears,
+      driverPhoto: req.vendor.cabDetails.driverPhoto,
+      isOwnerDriver: req.vendor.cabDetails.isOwnerDriver,
+      policeVerificationDocument: req.vendor.cabDetails.policeVerificationDocument,
+    } : null;
+
+    return res.status(200).json({
+      success: true,
+      total: driversList.length,
+      assignedCount: driversList.filter((d) => d.isAssigned).length,
+      unassignedCount: driversList.filter((d) => !d.isAssigned).length,
+      data: driversList,
+      profileDriver,
+    });
+  } catch (error) {
+    console.error("GET VENDOR DRIVERS ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch driver details",
+    });
+  }
+};
+
+
+/* =========================================================
+   UPDATE CAB DRIVER
+   PUT /api/vendor/cabs/drivers/:cabId
+========================================================= */
+
+exports.updateCabDriver = async (req, res) => {
+  try {
+    const { cabId } = req.params;
+    const {
+      driverName,
+      driverPhone,
+      driverAlternatePhone,
+      driverLicenseNumber,
+      experienceYears,
+      driverPhoto,
+    } = req.body;
+
+    const cab = await Cab.findOne({ _id: cabId, vendor: req.vendor._id });
+    if (!cab) {
+      return res.status(404).json({
+        success: false,
+        message: "Cab not found",
+      });
+    }
+
+    cab.driver = {
+      name: driverName !== undefined ? driverName : cab.driver?.name || "",
+      phone: driverPhone !== undefined ? driverPhone : cab.driver?.phone || "",
+      alternatePhone: driverAlternatePhone !== undefined ? driverAlternatePhone : cab.driver?.alternatePhone || "",
+      licenseNumber: driverLicenseNumber !== undefined ? driverLicenseNumber : cab.driver?.licenseNumber || "",
+      experienceYears: experienceYears !== undefined ? Number(experienceYears) || 0 : cab.driver?.experienceYears || 0,
+      photo: driverPhoto !== undefined ? driverPhoto : cab.driver?.photo || "",
+    };
+
+    cab.driverName = cab.driver.name;
+    cab.driverPhone = cab.driver.phone;
+    cab.driverAlternatePhone = cab.driver.alternatePhone;
+    cab.driverLicenseNumber = cab.driver.licenseNumber;
+    cab.driverExperience = cab.driver.experienceYears;
+
+    await cab.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Driver details updated successfully",
+      data: cab,
+    });
+  } catch (error) {
+    console.error("UPDATE CAB DRIVER ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to update driver details",
     });
   }
 };

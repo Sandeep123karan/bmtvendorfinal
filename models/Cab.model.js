@@ -120,7 +120,7 @@ const cabSchema = new mongoose.Schema(
     },
 
     /* =========================================
-       ROUTE
+       ROUTE & LOCATION (Within 40km coverage)
     ========================================= */
     fromCity: {
       type: String,
@@ -140,6 +140,21 @@ const cabSchema = new mongoose.Schema(
     },
 
     dropLocation: {
+      type: String,
+      default: "",
+    },
+
+    baseLocation: {
+      type: String,
+      default: "",
+    },
+
+    serviceRadiusKm: {
+      type: Number,
+      default: 40, // Coverage within 40 km
+    },
+
+    operatingArea: {
       type: String,
       default: "",
     },
@@ -306,6 +321,11 @@ const cabSchema = new mongoose.Schema(
       experienceYears: {
         type: Number,
         default: 0,
+      },
+
+      photo: {
+        type: String,
+        default: "",
       },
     },
 

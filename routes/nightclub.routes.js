@@ -3,48 +3,51 @@ const express = require("express");
 const router = express.Router();
 
 const protect = require("../middleware/auth.middleware");
+const upload = require("../middleware/upload");
 
 const {
-  createNightclub,
-  getAllNightclubs,
-  getMyNightclubs,
-  getNightclubById,
-  updateNightclub,
-  deleteNightclub,
-  approveNightclub,
-  rejectNightclub,
+  createNightClub,
+  getMyNightClubs,
+  getNightClubById,
+  updateNightClub,
+  deleteNightClub,
+  removeNightClubMedia,
+  submitNightClub,
+  publishNightClub,
+  unpublishNightClub,
 } = require("../controllers/nightclub.controller");
 
-/* ==========================================
-   PUBLIC / LIST
-========================================== */
+// shared multer config for create + update
+const clubUploads = upload.fields([
+  { name: "logo", maxCount: 1 },
+  { name: "coverImage", maxCount: 1 },
+  { name: "images", maxCount: 10 },
+  { name: "videos", maxCount: 5 },
+  { name: "alcoholLicenseDocument", maxCount: 1 },
+  { name: "exciseLicenseDocument", maxCount: 1 },
+  { name: "fireNOCDocument", maxCount: 1 },
+]);
 
-router.get("/", getAllNightclubs);
+// CREATE      POST   /api/vendor/nightclubs
+router.post("/", protect, clubUploads, createNightClub);
 
-/* ==========================================
-   VENDOR NIGHTCLUB
-========================================== */
+// LIST        GET    /api/vendor/nightclubs   (and /my-club)
+router.get("/", protect, getMyNightClubs);
+router.get("/my-club", protect, getMyNightClubs);
 
-router.get("/my", protect, getMyNightclubs);
+// ACTIONS (specific paths first, before "/:id")
+router.patch("/:id/submit", protect, submitNightClub);
+router.patch("/:id/publish", protect, publishNightClub);
+router.patch("/:id/unpublish", protect, unpublishNightClub);
+router.patch("/:id/remove-media", protect, removeNightClubMedia);
 
-router.post("/", protect, createNightclub);
+// READ ONE    GET    /api/vendor/nightclubs/:id
+router.get("/:id", protect, getNightClubById);
 
-/* ==========================================
-   ADMIN ACTIONS
-========================================== */
+// UPDATE      PUT    /api/vendor/nightclubs/:id
+router.put("/:id", protect, clubUploads, updateNightClub);
 
-router.put("/:id/approve", approveNightclub);
-
-router.put("/:id/reject", rejectNightclub);
-
-/* ==========================================
-   SINGLE NIGHTCLUB
-========================================== */
-
-router.get("/:id", getNightclubById);
-
-router.put("/:id", protect, updateNightclub);
-
-router.delete("/:id", protect, deleteNightclub);
+// DELETE      DELETE /api/vendor/nightclubs/:id
+router.delete("/:id", protect, deleteNightClub);
 
 module.exports = router;
