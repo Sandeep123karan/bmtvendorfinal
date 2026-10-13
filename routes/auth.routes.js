@@ -55,7 +55,7 @@ router.get("/profile", protect, getVendorProfile);
 ========================================================== */
 
 // GET /api/vendor/auth/vendors
-router.get("/vendors",  getAllVendors);
+router.get("/vendors",getAllVendors);
 
 // GET /api/vendor/auth/pending-vendors
 router.get("/pending-vendors", getPendingVendors);
