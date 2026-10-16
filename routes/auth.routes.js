@@ -55,20 +55,20 @@ router.get("/profile", protect, getVendorProfile);
 ========================================================== */
 
 // GET /api/vendor/auth/vendors
-router.get("/vendors",  getAllVendors);
+router.get("/vendors",getAllVendors);
 
 // GET /api/vendor/auth/pending-vendors
-router.get("/pending-vendors", protect, getPendingVendors);
+router.get("/pending-vendors", getPendingVendors);
 
 // GET /api/vendor/auth/vendors/:id
 // Full application (details, documents, bank, tax) for review.
-router.get("/vendors/:id", protect, getVendorApplication);
+router.get("/vendors/:id", getVendorApplication);
 
 // PUT /api/vendor/auth/approve-vendor/:id
 router.put("/approve-vendor/:id",  approveVendor);
 
 // PUT /api/vendor/auth/reject-vendor/:id
-router.put("/reject-vendor/:id", protect, rejectVendor);
+router.put("/reject-vendor/:id",  rejectVendor);
 
 /* ==========================================================
    EXPORT

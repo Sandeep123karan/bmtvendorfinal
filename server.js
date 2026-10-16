@@ -266,7 +266,10 @@
 //   console.log(`🚀 Server running on port ${PORT}`);
 // });
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> 843d21f02d962696df23a4ae9e37fa240bc2d2a2
 require("dotenv").config();
 
 const dns = require("dns");
@@ -282,6 +285,7 @@ const connectDB = require("./config/db");
 
 const app = express();
 
+<<<<<<< HEAD
 /* ==============================
    🛡️ CORS CONFIGURATION
    Allow localhost:3000 and localhost:3001
@@ -302,6 +306,44 @@ const corsOptions = {
     }
 
     console.error("❌ CORS blocked origin:", origin);
+=======
+/* =========================================================
+   🌍 CORS CONFIGURATION
+========================================================= */
+
+const allowedOrigins = [
+  "https://vendor.birdmytrip.com",
+  "https://www.vendor.birdmytrip.com",
+
+  // Agar main website se bhi API call hoti hai:
+  "https://birdmytrip.com",
+  "https://www.birdmytrip.com",
+
+  // Local development
+  "http://localhost:3000",
+  "http://localhost:5173",
+];
+
+/*
+  CORS middleware
+  - Specific origins allowed
+  - Credentials enabled
+  - OPTIONS / preflight supported
+*/
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Postman, server-to-server, curl etc.
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.log("❌ CORS blocked origin:", origin);
+>>>>>>> 843d21f02d962696df23a4ae9e37fa240bc2d2a2
 
     return callback(
       new Error(`CORS blocked for origin: ${origin}`)
@@ -327,6 +369,7 @@ const corsOptions = {
     "Origin",
   ],
 
+<<<<<<< HEAD
   optionsSuccessStatus: 204,
 };
 
@@ -336,6 +379,32 @@ app.use(cors(corsOptions));
 /* ==============================
    🛡️ SECURITY & PERFORMANCE
 ============================== */
+=======
+  exposedHeaders: [
+    "Content-Length",
+    "Content-Range",
+  ],
+
+  optionsSuccessStatus: 204,
+
+  maxAge: 86400,
+};
+
+/*
+  IMPORTANT:
+  CORS middleware routes se PEHLE hona chahiye.
+*/
+app.use(cors(corsOptions));
+
+/*
+  Explicit preflight handling
+*/
+app.options("/{*path}", cors());
+
+/* =========================================================
+   🛡️ SECURITY MIDDLEWARE
+========================================================= */
+>>>>>>> 843d21f02d962696df23a4ae9e37fa240bc2d2a2
 
 app.use(
   helmet({
@@ -345,8 +414,10 @@ app.use(
 );
 
 app.use(compression());
+
 app.use(morgan("dev"));
 
+<<<<<<< HEAD
 /* ==============================
    📦 BODY PARSERS
 ============================== */
@@ -358,11 +429,38 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
    🗄️ DATABASE CONNECTION
 ============================== */
 
+=======
+/* =========================================================
+   📦 BODY PARSER
+========================================================= */
+
+app.use(
+  express.json({
+    limit: "50mb",
+  })
+);
+
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: "50mb",
+  })
+);
+
+/* =========================================================
+   🗄️ DATABASE
+========================================================= */
+
+>>>>>>> 843d21f02d962696df23a4ae9e37fa240bc2d2a2
 connectDB();
 
-/* ==============================
+/* =========================================================
    🧩 SAFE ROUTE LOADER
+<<<<<<< HEAD
 ============================== */
+=======
+========================================================= */
+>>>>>>> 843d21f02d962696df23a4ae9e37fa240bc2d2a2
 
 function loadRouter(file, exportName) {
   let mod;
@@ -370,7 +468,10 @@ function loadRouter(file, exportName) {
   try {
     mod = require(file);
   } catch (err) {
-    console.error(`❌ Cannot load ${file}: ${err.message}`);
+    console.error(
+      `❌ Cannot load ${file}: ${err.message}`
+    );
+
     return null;
   }
 
@@ -382,14 +483,23 @@ function loadRouter(file, exportName) {
   ].filter(Boolean);
 
   const router = candidates.find(
+<<<<<<< HEAD
     (candidate) => typeof candidate === "function"
+=======
+    (candidate) =>
+      typeof candidate === "function"
+>>>>>>> 843d21f02d962696df23a4ae9e37fa240bc2d2a2
   );
 
   if (!router) {
     console.error(
       `❌ ${file} does not export a valid router` +
-        (exportName ? ` (looking for "${exportName}")` : "") +
-        `. Found exports: [${Object.keys(mod || {}).join(", ")}]`
+        (exportName
+          ? ` (looking for "${exportName}")`
+          : "") +
+        `. Found exports: [${Object.keys(
+          mod || {}
+        ).join(", ")}]`
     );
 
     return null;
@@ -398,16 +508,22 @@ function loadRouter(file, exportName) {
   return router;
 }
 
+<<<<<<< HEAD
 /* ==============================
    🚀 ROUTES TABLE
 ============================== */
+=======
+/* =========================================================
+   🚀 ROUTES
+========================================================= */
+>>>>>>> 843d21f02d962696df23a4ae9e37fa240bc2d2a2
 
 const routes = [
-  // AUTH
-  ["/api/vendor/auth", "./routes/auth.routes"],
-  ["/api/user/auth", "./routes/userAuth.routes"],
-  ["/api/bmt-partner/auth", "./routes/bmtPartnerAuth.routes"],
+  /* =========================
+     AUTH
+  ========================= */
 
+<<<<<<< HEAD
   // UPLOAD
   ["/api/upload", "./routes/Upload.routes"],
 
@@ -427,18 +543,28 @@ const routes = [
   ],
   ["/api/vendor/tour-schedules", "./routes/tourSchedule.routes"],
   ["/api/tour-reviews", "./routes/tourReview.routes"],
+=======
+  [
+    "/api/vendor/auth",
+    "./routes/auth.routes",
+  ],
 
-  // ACTIVITIES
-  ["/api/vendor/activities", "./routes/activity.routes"],
-  ["/api/vendor/activity-schedules", "./routes/activitySchedule.routes"],
-  ["/api/activity-bookings", "./routes/activityBooking.routes"],
+  [
+    "/api/user/auth",
+    "./routes/userAuth.routes",
+  ],
+>>>>>>> 843d21f02d962696df23a4ae9e37fa240bc2d2a2
 
-  // HOTELS
-  ["/api/vendor/hotels", "./routes/hotel.routes"],
-  ["/api/hotel-rooms", "./routes/HotelRoom.routes"],
-  ["/api/hotel-booking", "./routes/hotelBooking.routes"],
-  ["/api/hotel-inventory", "./routes/HotelInventory.routes"],
+  [
+    "/api/bmt-partner/auth",
+    "./routes/bmtPartnerAuth.routes",
+  ],
 
+  /* =========================
+     UPLOAD
+  ========================= */
+
+<<<<<<< HEAD
   // NIGHTCLUBS
   ["/api/vendor/nightclubs", "./routes/nightclub.routes"],
   ["/api/nightclubs", "./routes/nightclub.routes"],
@@ -458,34 +584,51 @@ const routes = [
   ],
   ["/api/darshan-bookings", "./routes/darshanBooking.routes"],
   ["/api/vendor/darshans", "./routes/vendorDarshanRoutes"],
+=======
+  [
+    "/api/upload",
+    "./routes/Upload.routes",
+  ],
 
-  // CABS
-  ["/api/vendor/cabs", "./routes/cab.routes"],
-  ["/api/cabs", "./routes/cabBooking.routes"],
+  /* =========================
+     TOURS
+  ========================= */
+>>>>>>> 843d21f02d962696df23a4ae9e37fa240bc2d2a2
 
-  // BUS
-  ["/api/buses", "./routes/bus.routes"],
-  ["/api/bus-types", "./routes/busType.routes"],
-  ["/api/bus-seat-layouts", "./routes/busSeatLayout.routes"],
-  ["/api/bus-trips", "./routes/busTrip.routes"],
-  ["/api/bus-bookings", "./routes/busBooking.routes"],
+  [
+    "/api/vendor/tours",
+    "./routes/tour.routes",
+  ],
 
+  [
+    "/api/vendor/tour-bookings",
+    "./routes/tourBooking.routes",
+  ],
+
+<<<<<<< HEAD
   // FLIGHTS
   ["/api/flights", "./routes/flight.routes"],
   ["/api/flight-bookings", "./routes/flightBooking.routes"],
+=======
+  [
+    "/api/customer/tour-bookings",
+    "./routes/tourBooking.routes",
+  ],
+>>>>>>> 843d21f02d962696df23a4ae9e37fa240bc2d2a2
 
-  // HOMESTAY
-  ["/api/vendor/homestay", "./routes/homestay.routes"],
-  ["/api/homestay-units", "./routes/homestayUnit.routes"],
-  ["/api/homestay-inventory", "./routes/homestayInventory.routes"],
-  ["/api/homestay-bookings", "./routes/homestayBooking.routes"],
-  ["/api/homestay-reviews", "./routes/homestayReview.routes"],
+  [
+    "/api/customer/tour-queries",
+    "./routes/tourQuery.routes",
+    "customerTourQueryRoutes",
+  ],
 
-  // HOLIDAY / BNB
-  ["/api/vendor/holidays", "./routes/holiday.routes"],
-  ["/api/vendor/bnb", "./routes/bnbRoutes"],
-  ["/api/holiday-bookings", "./routes/holidayBooking.routes"],
+  [
+    "/api/vendor/tour-queries",
+    "./routes/tourQuery.routes",
+    "vendorTourQueryRoutes",
+  ],
 
+<<<<<<< HEAD
   // APARTMENT
   ["/api/vendor/apartment", "./routes/Apartment.routes"],
   ["/api/apartment-inventory", "./routes/apartmentInventory.routes"],
@@ -495,39 +638,409 @@ const routes = [
     "./routes/apartmentDynamicPricing.routes",
   ],
   ["/api/apartment-bookings", "./routes/apartmentBooking.routes"],
+=======
+  [
+    "/api/vendor/tour-schedules",
+    "./routes/tourSchedule.routes",
+  ],
+>>>>>>> 843d21f02d962696df23a4ae9e37fa240bc2d2a2
 
-  // VACATION HOUSE / PALACE / MOTEL
-  ["/api/vacation-house", "./routes/vacationHouseRoutes"],
-  ["/api/palaces", "./routes/palaceRoutes"],
-  ["/api/palace-room-categories", "./routes/palaceRoomCategoryRoutes"],
-  ["/api/palace-room-units", "./routes/palaceRoomUnitRoutes"],
-  ["/api/palace-rate-plans", "./routes/palaceRatePlanRoutes"],
-  ["/api/palace-inventory", "./routes/palaceInventoryRoutes"],
-  ["/api/motel-vendors", "./routes/motelVendorRoutes"],
+  [
+    "/api/tour-reviews",
+    "./routes/tourReview.routes",
+  ],
 
-  // RESORT
-  ["/api/resorts", "./routes/resort.routes"],
-  ["/api/resort-rooms", "./routes/resortRoom.routes"],
-  ["/api/resort-room-units", "./routes/resortRoomUnit.routes"],
-  ["/api/resort-inventory", "./routes/resortInventory.routes"],
-  ["/api/resort-rate-plans", "./routes/resortRatePlan.routes"],
-  ["/api/resort-pricing", "./routes/resortPricing.routes"],
-  ["/api/resort-bookings", "./routes/resortBooking.routes"],
-  ["/api/resort-reviews", "./routes/resortReview.routes"],
+  /* =========================
+     ACTIVITIES
+  ========================= */
 
-  // CAMPSITE
-  ["/api/vendor/campsite", "./routes/vendorCampsite.routes"],
+  [
+    "/api/vendor/activities",
+    "./routes/activity.routes",
+  ],
 
-  // CRUISE
-  ["/api/vendor/cruise/ships", "./routes/cruiseShip.routes"],
-  ["/api/cruise-cabins", "./routes/cruiseCabin.routes"],
-  ["/api/cruise-itineraries", "./routes/cruiseItinerary.routes"],
-  ["/api/cruise-sailings", "./routes/cruiseSailing.routes"],
-  ["/api/cruise-pricings", "./routes/cruisePricing.routes"],
-  ["/api/cruise-availabilities", "./routes/cruiseAvailability.routes"],
-  ["/api/customer/cruise-bookings", "./routes/cruiseBooking.routes"],
+  [
+    "/api/vendor/activity-schedules",
+    "./routes/activitySchedule.routes",
+  ],
+
+  [
+    "/api/activity-bookings",
+    "./routes/activityBooking.routes",
+  ],
+
+  /* =========================
+     HOTELS
+  ========================= */
+
+  [
+    "/api/vendor/hotels",
+    "./routes/hotel.routes",
+  ],
+
+  [
+    "/api/hotel-rooms",
+    "./routes/HotelRoom.routes",
+  ],
+
+  [
+    "/api/hotel-booking",
+    "./routes/hotelBooking.routes",
+  ],
+
+  [
+    "/api/hotel-inventory",
+    "./routes/HotelInventory.routes",
+  ],
+
+  /* =========================
+     NIGHTCLUBS
+  ========================= */
+
+  [
+    "/api/vendor/nightclubs",
+    "./routes/nightclub.routes",
+  ],
+
+  [
+    "/api/nightclubs",
+    "./routes/nightclub.routes",
+  ],
+
+  [
+    "/api/nightclub-events",
+    "./routes/nightClubEvent.routes",
+  ],
+
+  [
+    "/api/nightclub-event-tickets",
+    "./routes/nightclubEventTicket.routes",
+  ],
+
+  [
+    "/api/nightclub-event-bookings",
+    "./routes/nightclubEventBooking.routes",
+  ],
+
+  [
+    "/api/vendor/nightclub-tables",
+    "./routes/nightClubTable.routes",
+  ],
+
+  [
+    "/api/nightclub-table-pricing",
+    "./routes/nightClubTablePricing.routes",
+  ],
+
+  /* =========================
+     DARSHAN
+  ========================= */
+
+  [
+    "/api/vendor/darshans",
+    "./routes/darshan.routes",
+  ],
+
+  [
+    "/api/vendor/darshan-types",
+    "./routes/darshanType.routes",
+  ],
+
+  [
+    "/api/vendor/darshan-slots",
+    "./routes/darshanSlot.routes",
+  ],
+
+  [
+    "/api/vendor/darshan-slot-availability",
+    "./routes/darshanSlotAvailability.routes",
+  ],
+
+  [
+    "/api/darshan-bookings",
+    "./routes/darshanBooking.routes",
+  ],
+
+  [
+    "/api/vendor/darshans",
+    "./routes/vendorDarshanRoutes",
+  ],
+
+  /* =========================
+     CABS
+  ========================= */
+
+  [
+    "/api/vendor/cabs",
+    "./routes/cab.routes",
+  ],
+
+  [
+    "/api/cabs",
+    "./routes/cabBooking.routes",
+  ],
+
+  /* =========================
+     BUS
+  ========================= */
+
+  [
+    "/api/buses",
+    "./routes/bus.routes",
+  ],
+
+  [
+    "/api/bus-types",
+    "./routes/busType.routes",
+  ],
+
+  [
+    "/api/bus-seat-layouts",
+    "./routes/busSeatLayout.routes",
+  ],
+
+  [
+    "/api/bus-trips",
+    "./routes/busTrip.routes",
+  ],
+
+  [
+    "/api/bus-bookings",
+    "./routes/busBooking.routes",
+  ],
+
+  /* =========================
+     FLIGHT
+  ========================= */
+
+  [
+    "/api/flights",
+    "./routes/flight.routes",
+  ],
+
+  [
+    "/api/flight-bookings",
+    "./routes/flightBooking.routes",
+  ],
+
+  /* =========================
+     HOMESTAY
+  ========================= */
+
+  [
+    "/api/vendor/homestay",
+    "./routes/homestay.routes",
+  ],
+
+  [
+    "/api/homestay-units",
+    "./routes/homestayUnit.routes",
+  ],
+
+  [
+    "/api/homestay-inventory",
+    "./routes/homestayInventory.routes",
+  ],
+
+  [
+    "/api/homestay-bookings",
+    "./routes/homestayBooking.routes",
+  ],
+
+  [
+    "/api/homestay-reviews",
+    "./routes/homestayReview.routes",
+  ],
+
+  /* =========================
+     HOLIDAY / BNB
+  ========================= */
+
+  [
+    "/api/vendor/holidays",
+    "./routes/holiday.routes",
+  ],
+
+  [
+    "/api/vendor/bnb",
+    "./routes/bnbRoutes",
+  ],
+
+  [
+    "/api/holiday-bookings",
+    "./routes/holidayBooking.routes",
+  ],
+
+  /* =========================
+     APARTMENT
+  ========================= */
+
+  [
+    "/api/vendor/apartment",
+    "./routes/Apartment.routes",
+  ],
+
+  [
+    "/api/apartment-inventory",
+    "./routes/apartmentInventory.routes",
+  ],
+
+  [
+    "/api/apartment-rate-plans",
+    "./routes/apartmentRatePlan.routes",
+  ],
+
+  [
+    "/api/apartment-dynamic-pricing",
+    "./routes/apartmentDynamicPricing.routes",
+  ],
+
+  [
+    "/api/apartment-bookings",
+    "./routes/apartmentBooking.routes",
+  ],
+
+  /* =========================
+     VACATION HOUSE
+  ========================= */
+
+  [
+    "/api/vacation-house",
+    "./routes/vacationHouseRoutes",
+  ],
+
+  /* =========================
+     PALACE
+  ========================= */
+
+  [
+    "/api/palaces",
+    "./routes/palaceRoutes",
+  ],
+
+  [
+    "/api/palace-room-categories",
+    "./routes/palaceRoomCategoryRoutes",
+  ],
+
+  [
+    "/api/palace-room-units",
+    "./routes/palaceRoomUnitRoutes",
+  ],
+
+  [
+    "/api/palace-rate-plans",
+    "./routes/palaceRatePlanRoutes",
+  ],
+
+  [
+    "/api/palace-inventory",
+    "./routes/palaceInventoryRoutes",
+  ],
+
+  /* =========================
+     MOTEL
+  ========================= */
+
+  [
+    "/api/motel-vendors",
+    "./routes/motelVendorRoutes",
+  ],
+
+  /* =========================
+     RESORT
+  ========================= */
+
+  [
+    "/api/resorts",
+    "./routes/resort.routes",
+  ],
+
+  [
+    "/api/resort-rooms",
+    "./routes/resortRoom.routes",
+  ],
+
+  [
+    "/api/resort-room-units",
+    "./routes/resortRoomUnit.routes",
+  ],
+
+  [
+    "/api/resort-inventory",
+    "./routes/resortInventory.routes",
+  ],
+
+  [
+    "/api/resort-rate-plans",
+    "./routes/resortRatePlan.routes",
+  ],
+
+  [
+    "/api/resort-pricing",
+    "./routes/resortPricing.routes",
+  ],
+
+  [
+    "/api/resort-bookings",
+    "./routes/resortBooking.routes",
+  ],
+
+  [
+    "/api/resort-reviews",
+    "./routes/resortReview.routes",
+  ],
+
+  /* =========================
+     CAMPSITE
+  ========================= */
+
+  [
+    "/api/vendor/campsite",
+    "./routes/vendorCampsite.routes",
+  ],
+
+  /* =========================
+     CRUISE
+  ========================= */
+
+  [
+    "/api/vendor/cruise/ships",
+    "./routes/cruiseShip.routes",
+  ],
+
+  [
+    "/api/cruise-cabins",
+    "./routes/cruiseCabin.routes",
+  ],
+
+  [
+    "/api/cruise-itineraries",
+    "./routes/cruiseItinerary.routes",
+  ],
+
+  [
+    "/api/cruise-sailings",
+    "./routes/cruiseSailing.routes",
+  ],
+
+  [
+    "/api/cruise-pricings",
+    "./routes/cruisePricing.routes",
+  ],
+
+  [
+    "/api/cruise-availabilities",
+    "./routes/cruiseAvailability.routes",
+  ],
+
+  [
+    "/api/customer/cruise-bookings",
+    "./routes/cruiseBooking.routes",
+  ],
 ];
 
+<<<<<<< HEAD
 /* ==============================
    🔗 MOUNT ROUTES
 ============================== */
@@ -560,10 +1073,63 @@ if (failedRoutes.length) {
 /* ==============================
    ❤️ HEALTH CHECK
 ============================== */
+=======
+/* =========================================================
+   🔌 MOUNT ALL ROUTES
+========================================================= */
+
+const failedRoutes = [];
+
+routes.forEach(
+  ([path, file, exportName]) => {
+    const router = loadRouter(
+      file,
+      exportName
+    );
+
+    if (router) {
+      app.use(path, router);
+
+      console.log(
+        `✅ Route mounted: ${path}`
+      );
+    } else {
+      failedRoutes.push(
+        `${path} -> ${file}${
+          exportName
+            ? ` [${exportName}]`
+            : ""
+        }`
+      );
+    }
+  }
+);
+
+/* =========================================================
+   ⚠️ FAILED ROUTES LOG
+========================================================= */
+
+if (failedRoutes.length > 0) {
+  console.error(
+    "\n⚠️ These routes were SKIPPED:"
+  );
+
+  failedRoutes.forEach((route) => {
+    console.error(`   - ${route}`);
+  });
+
+  console.error("");
+}
+
+/* =========================================================
+   ❤️ ROOT HEALTH CHECK
+========================================================= */
+>>>>>>> 843d21f02d962696df23a4ae9e37fa240bc2d2a2
 
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
+<<<<<<< HEAD
     message: "Vendor Backend Running Successfully",
     port: process.env.PORT || 7000,
   });
@@ -572,6 +1138,33 @@ app.get("/", (req, res) => {
 /* ==============================
    ❌ API 404 HANDLER
 ============================== */
+=======
+    message:
+      "🚀 Vendor Backend Running Successfully",
+    service: "BirdMyTrip Vendor API",
+    environment:
+      process.env.NODE_ENV ||
+      "development",
+  });
+});
+
+/* =========================================================
+   ❤️ API HEALTH CHECK
+========================================================= */
+
+app.get("/api/health", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "API is healthy",
+    timestamp:
+      new Date().toISOString(),
+  });
+});
+
+/* =========================================================
+   ❌ API 404
+========================================================= */
+>>>>>>> 843d21f02d962696df23a4ae9e37fa240bc2d2a2
 
 app.use("/api", (req, res) => {
   res.status(404).json({
@@ -581,9 +1174,15 @@ app.use("/api", (req, res) => {
   });
 });
 
+<<<<<<< HEAD
 /* ==============================
    ❌ GENERAL 404 HANDLER
 ============================== */
+=======
+/* =========================================================
+   ❌ GLOBAL 404
+========================================================= */
+>>>>>>> 843d21f02d962696df23a4ae9e37fa240bc2d2a2
 
 app.use((req, res) => {
   res.status(404).json({
@@ -593,6 +1192,7 @@ app.use((req, res) => {
   });
 });
 
+<<<<<<< HEAD
 /* ==============================
    🔥 ERROR HANDLER
 ============================== */
@@ -613,9 +1213,54 @@ app.use((err, req, res, next) => {
     message: err.message || "Internal Server Error",
   });
 });
+=======
+/* =========================================================
+   🔥 GLOBAL ERROR HANDLER
+========================================================= */
 
-/* ==============================
+app.use(
+  (err, req, res, next) => {
+    console.error(
+      "🔥 Error:",
+      err
+    );
+>>>>>>> 843d21f02d962696df23a4ae9e37fa240bc2d2a2
+
+    /*
+      CORS error
+    */
+    if (
+      err.message &&
+      err.message.startsWith(
+        "CORS blocked"
+      )
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "CORS origin not allowed",
+        origin:
+          req.headers.origin || null,
+      });
+    }
+
+    const statusCode =
+      err.status ||
+      err.statusCode ||
+      500;
+
+    res.status(statusCode).json({
+      success: false,
+      message:
+        err.message ||
+        "Internal Server Error",
+    });
+  }
+);
+
+/* =========================================================
    🟢 START SERVER
+<<<<<<< HEAD
 ============================== */
 
 const PORT = process.env.PORT || 7000;
@@ -627,3 +1272,50 @@ app.listen(PORT, () => {
   console.log("✅ CORS enabled for localhost:3001");
   console.log("======================================");
 });
+=======
+========================================================= */
+
+const PORT =
+  process.env.PORT || 7000;
+
+app.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "🚀 BIRD MY TRIP VENDOR BACKEND"
+    );
+
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      `🟢 Server running on port: ${PORT}`
+    );
+
+    console.log(
+      `🌍 Environment: ${
+        process.env.NODE_ENV ||
+        "development"
+      }`
+    );
+
+    console.log(
+      `🌐 Frontend: https://vendor.birdmytrip.com`
+    );
+
+    console.log(
+      `❤️ Health: /api/health`
+    );
+
+    console.log(
+      "========================================"
+    );
+  }
+);
+>>>>>>> 843d21f02d962696df23a4ae9e37fa240bc2d2a2
