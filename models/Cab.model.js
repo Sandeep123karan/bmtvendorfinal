@@ -467,4 +467,4 @@ cabSchema.index({
 });
 
 
-module.exports = mongoose.model("Cab", cabSchema);
+module.exports = mongoose.model("Cab", cabSchema);  

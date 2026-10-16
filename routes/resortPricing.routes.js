@@ -1,6 +1,25 @@
+// const express = require("express");
+// const router = express.Router();
+
+// const protect = require("../middleware/auth.middleware");
+
+// const {
+//   setDateWisePrice,
+//   getDateWisePricing,
+// } = require("../controllers/resortPricing.controller");
+
+// router.use(protect);
+
+// router.post("/", setDateWisePrice);
+
+// router.get(
+//   "/rate-plan/:ratePlanId",
+//   getDateWisePricing
+// );
+
+// module.exports = router;
 const express = require("express");
 const router = express.Router();
-
 const protect = require("../middleware/auth.middleware");
 
 const {
@@ -11,10 +30,6 @@ const {
 router.use(protect);
 
 router.post("/", setDateWisePrice);
-
-router.get(
-  "/rate-plan/:ratePlanId",
-  getDateWisePricing
-);
+router.get("/rate-plan/:ratePlanId", getDateWisePricing);
 
 module.exports = router;

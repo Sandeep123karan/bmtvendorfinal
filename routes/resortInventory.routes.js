@@ -1,35 +1,39 @@
-const express = require("express");
 
+const express = require("express");
 const router = express.Router();
 
 const protect = require("../middleware/auth.middleware");
 
 const {
-  upsertInventory,
+  createInventory,
   getResortInventory,
   getRoomCategoryInventory,
+  getInventoryById,
+  updateInventory,
+  deleteInventory,
 } = require("../controllers/resortInventory.controller");
-
 
 router.use(protect);
 
+// CREATE inventory
+router.post("/", createInventory);
 
-// Create / Update date-wise inventory
-router.post("/", upsertInventory);
+// GET inventory by resort
+router.get("/resort/:resortId", getResortInventory);
 
-
-// Get all inventory of one resort
-router.get(
-  "/resort/:resortId",
-  getResortInventory
-);
-
-
-// Get inventory of one room category
+// GET inventory by room category
 router.get(
   "/room-category/:roomCategoryId",
   getRoomCategoryInventory
 );
 
+// GET single inventory record
+router.get("/:inventoryId", getInventoryById);
+
+// UPDATE inventory
+router.put("/:inventoryId", updateInventory);
+
+// DELETE inventory
+router.delete("/:inventoryId", deleteInventory);
 
 module.exports = router;

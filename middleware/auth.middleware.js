@@ -2,17 +2,7 @@
 const jwt = require("jsonwebtoken");
 const Vendor = require("../models/Vendor.model");
 
-/* ==========================================================
-   PROTECT MIDDLEWARE
 
-   Ye middleware:
-   - Bearer token read karega
-   - JWT verify karega
-   - Vendor ko fresh DB se fetch karega
-   - role / permissions / vertical / staySubtype DB se lega
-   - blocked / suspended / inactive account ko reject karega
-   - req.vendor me authenticated vendor attach karega
-========================================================== */
 
 const protect = async (req, res, next) => {
   try {

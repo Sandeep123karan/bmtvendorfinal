@@ -1,6 +1,104 @@
+// const mongoose = require("mongoose");
+
+// const resortPricingSchema = new mongoose.Schema(
+//   {
+//     vendor: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: "Vendor",
+//       required: true,
+//       index: true,
+//     },
+
+//     resort: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: "Resort",
+//       required: true,
+//       index: true,
+//     },
+
+//     roomCategory: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: "ResortRoom",
+//       required: true,
+//       index: true,
+//     },
+
+//     ratePlan: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: "ResortRatePlan",
+//       required: true,
+//       index: true,
+//     },
+
+//     date: {
+//       type: Date,
+//       required: true,
+//       index: true,
+//     },
+
+//     price: {
+//       type: Number,
+//       required: true,
+//       min: 0,
+//     },
+
+//     extraAdultPrice: {
+//       type: Number,
+//       default: 0,
+//       min: 0,
+//     },
+
+//     extraChildPrice: {
+//       type: Number,
+//       default: 0,
+//       min: 0,
+//     },
+
+//     minStay: {
+//       type: Number,
+//       default: 1,
+//       min: 1,
+//       validate: {
+//         validator: Number.isInteger,
+//         message: "minStay must be an integer.",
+//       },
+//     },
+
+//     isAvailable: {
+//       type: Boolean,
+//       default: true,
+//     },
+
+//     notes: {
+//       type: String,
+//       default: "",
+//       trim: true,
+//     },
+//   },
+//   {
+//     timestamps: true,
+//   }
+// );
+
+// resortPricingSchema.index(
+//   { ratePlan: 1, date: 1 },
+//   { unique: true }
+// );
+
+// resortPricingSchema.index({
+//   resort: 1,
+//   roomCategory: 1,
+//   date: 1,
+// });
+
+// module.exports =
+//   mongoose.models.ResortPricing ||
+//   mongoose.model("ResortPricing", resortPricingSchema);
+
+
 const mongoose = require("mongoose");
 
-const resortPricingSchema = new mongoose.Schema(
+const resortInventorySchema = new mongoose.Schema(
   {
     vendor: {
       type: mongoose.Schema.Types.ObjectId,
@@ -13,73 +111,65 @@ const resortPricingSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Resort",
       required: true,
-      index: true,
     },
 
     roomCategory: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ResortRoom",
       required: true,
-      index: true,
     },
 
-    ratePlan: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "ResortRatePlan",
-      required: true,
-      index: true,
-    },
-
-    // ==========================================
-    // DATE
-    // ==========================================
     date: {
       type: Date,
       required: true,
-      index: true,
     },
 
-    // ==========================================
-    // PRICE FOR THIS DATE
-    // ==========================================
-    price: {
+    totalRooms: {
       type: Number,
       required: true,
       min: 0,
-    },
-
-    extraAdultPrice: {
-      type: Number,
       default: 0,
-      min: 0,
     },
 
-    extraChildPrice: {
+    availableRooms: {
       type: Number,
+      required: true,
+      min: 0,
       default: 0,
-      min: 0,
     },
 
-    // ==========================================
-    // MINIMUM STAY OVERRIDE
-    // ==========================================
-    minStay: {
+    bookedRooms: {
       type: Number,
-      default: 1,
-      min: 1,
+      required: true,
+      min: 0,
+      default: 0,
     },
 
-    // ==========================================
-    // STATUS
-    // ==========================================
-    isAvailable: {
-      type: Boolean,
-      default: true,
+    blockedRooms: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 0,
+    },
+
+    maintenanceRooms: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 0,
+    },
+
+    status: {
+      type: String,
+      enum: ["AVAILABLE", "SOLD_OUT", "BLOCKED", "CLOSED"],
+      default: "AVAILABLE",
+      required: true,
     },
 
     notes: {
       type: String,
       default: "",
+      trim: true,
     },
   },
   {
@@ -87,28 +177,18 @@ const resortPricingSchema = new mongoose.Schema(
   }
 );
 
-
-// One price per rate plan per date
-resortPricingSchema.index(
-  {
-    ratePlan: 1,
-    date: 1,
-  },
-  {
-    unique: true,
-  }
+// One inventory record per room category per date.
+resortInventorySchema.index(
+  { resort: 1, roomCategory: 1, date: 1 },
+  { unique: true }
 );
 
-
-// Fast search
-resortPricingSchema.index({
+resortInventorySchema.index({
+  vendor: 1,
   resort: 1,
-  roomCategory: 1,
   date: 1,
 });
 
-
-module.exports = mongoose.model(
-  "ResortPricing",
-  resortPricingSchema
-);
+module.exports =
+  mongoose.models.ResortInventory ||
+  mongoose.model("ResortInventory", resortInventorySchema);

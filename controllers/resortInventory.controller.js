@@ -1,367 +1,597 @@
+const mongoose = require("mongoose");
+
 const Resort = require("../models/Resort.model");
 const ResortRoom = require("../models/ResortRoom.model");
 const ResortRoomUnit = require("../models/ResortRoomUnit.model");
 const ResortInventory = require("../models/ResortInventory.model");
 
+const VALID_INVENTORY_STATUSES = ["AVAILABLE", "SOLD_OUT", "BLOCKED", "CLOSED"];
 
-// ==========================================================
-// CREATE / UPDATE INVENTORY
-// ==========================================================
+const isValidId = (id) =>
+  typeof id === "string" && mongoose.Types.ObjectId.isValid(id);
 
-exports.upsertInventory = async (req, res) => {
+const sendError = (res, statusCode, message) =>
+  res.status(statusCode).json({ success: false, message });
+
+// Strict YYYY-MM-DD validation; stores date at UTC midnight.
+const parseDate = (value) => {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return null;
+  }
+
+  const date = new Date(`${value}T00:00:00.000Z`);
+
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+    return null;
+  }
+
+  return date;
+};
+
+const parseDateRange = (startDate, endDate) => {
+  const range = {};
+
+  if (startDate) {
+    const start = parseDate(startDate);
+    if (!start) return { error: "Invalid startDate. Use YYYY-MM-DD format." };
+    range.$gte = start;
+  }
+
+  if (endDate) {
+    const end = parseDate(endDate);
+    if (!end) return { error: "Invalid endDate. Use YYYY-MM-DD format." };
+    end.setUTCHours(23, 59, 59, 999);
+    range.$lte = end;
+  }
+
+  if (range.$gte && range.$lte && range.$gte > range.$lte) {
+    return { error: "startDate cannot be after endDate." };
+  }
+
+  return { range };
+};
+
+const parseNonNegativeInteger = (value, fieldName) => {
+  const number = Number(value);
+
+  if (
+    value === "" ||
+    value === null ||
+    value === undefined ||
+    !Number.isInteger(number) ||
+    number < 0
+  ) {
+    return { error: `${fieldName} must be a non-negative integer.` };
+  }
+
+  return { value: number };
+};
+
+const getVendorId = (req) => {
+  const vendorId = req.vendor?._id;
+
+  if (!vendorId || !isValidId(String(vendorId))) {
+    return null;
+  }
+
+  return new mongoose.Types.ObjectId(String(vendorId));
+};
+
+const getOwnedResortAndCategory = async ({ vendorId, resortId, roomCategoryId }) => {
+  const resort = await Resort.findOne({ _id: resortId, vendor: vendorId });
+
+  if (!resort) {
+    return { error: "Resort not found or you do not have access to it." };
+  }
+
+  const roomCategory = await ResortRoom.findOne({
+    _id: roomCategoryId,
+    resort: resortId,
+    vendor: vendorId,
+  });
+
+  if (!roomCategory) {
+    return { error: "Room category not found for this resort." };
+  }
+
+  return { resort, roomCategory };
+};
+
+// Calculate inventory totals from registered physical room units.
+const calculateRoomCounts = async ({ vendorId, resortId, roomCategoryId }) => {
+  const units = await ResortRoomUnit.find({
+    vendor: vendorId,
+    resort: resortId,
+    roomCategory: roomCategoryId,
+    isActive: true,
+    status: { $ne: "INACTIVE" },
+  }).select("status");
+
+  return {
+    totalRooms: units.length,
+    maintenanceRooms: units.filter((u) => u.status === "MAINTENANCE").length,
+    blockedRooms: units.filter((u) => u.status === "BLOCKED").length,
+  };
+};
+
+const calculateInventoryStatus = ({ availableRooms, status }) => {
+  if (status === "CLOSED" || status === "BLOCKED") {
+    return { status, availableRooms: 0 };
+  }
+
+  if (availableRooms <= 0) {
+    return { status: "SOLD_OUT", availableRooms: 0 };
+  }
+
+  return { status: "AVAILABLE", availableRooms };
+};
+
+// Attach physical rooms currently marked AVAILABLE (not date-specific).
+const attachAvailableUnits = async (inventoryItems, vendorId) => {
+  const categoryIds = [
+    ...new Set(
+      inventoryItems
+        .map((item) => String(item.roomCategory?._id || item.roomCategory || ""))
+        .filter(Boolean)
+    ),
+  ];
+
+  if (!categoryIds.length) {
+    return inventoryItems.map((item) => ({
+      ...item.toObject(),
+      roomUnits: [],
+      inventoryAvailableRooms: item.availableRooms,
+      currentlyAvailableUnits: 0,
+    }));
+  }
+
+  const units = await ResortRoomUnit.find({
+    vendor: vendorId,
+    roomCategory: { $in: categoryIds },
+    isActive: true,
+    status: "AVAILABLE",
+  })
+    .select("_id resort roomCategory roomNumber floor building status")
+    .populate("roomCategory", "name title");
+
+  return inventoryItems.map((item) => {
+    const categoryId = String(item.roomCategory?._id || item.roomCategory);
+
+    const categoryUnits = units.filter(
+      (unit) =>
+        String(unit.roomCategory?._id || unit.roomCategory) === categoryId &&
+        String(unit.resort) === String(item.resort?._id || item.resort)
+    );
+
+    const canBook = item.status === "AVAILABLE" && item.availableRooms > 0;
+
+    return {
+      ...item.toObject(),
+      roomUnits: canBook ? categoryUnits : [],
+      inventoryAvailableRooms: item.availableRooms,
+      currentlyAvailableUnits: categoryUnits.length,
+    };
+  });
+};
+
+// CREATE inventory for one category and one date.
+// POST /api/resort-inventory
+exports.createInventory = async (req, res) => {
   try {
+    const vendorId = getVendorId(req);
+
+    if (!vendorId) {
+      return sendError(res, 401, "Vendor authentication required.");
+    }
+
     const {
       resortId,
       roomCategoryId,
-      date,
-      blockedRooms = 0,
-      maintenanceRooms = 0,
-      status = "AVAILABLE",
+      date: dateValue,
+      blockedRooms: blockedValue,
+      maintenanceRooms: maintenanceValue,
+      status: requestedStatus = "AVAILABLE",
       notes = "",
     } = req.body;
 
-
-    // ==========================================
-    // VALIDATION
-    // ==========================================
-
-    if (!resortId || !roomCategoryId || !date) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "resortId, roomCategoryId and date are required.",
-      });
+    if (!isValidId(resortId) || !isValidId(roomCategoryId)) {
+      return sendError(res, 400, "Valid resortId and roomCategoryId are required.");
     }
 
+    const date = parseDate(dateValue);
 
-    // Normalize date to midnight
-    const inventoryDate = new Date(date);
-    inventoryDate.setHours(0, 0, 0, 0);
-
-
-    if (Number.isNaN(inventoryDate.getTime())) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid date.",
-      });
+    if (!date) {
+      return sendError(res, 400, "Valid date is required in YYYY-MM-DD format.");
     }
 
+    if (!VALID_INVENTORY_STATUSES.includes(requestedStatus)) {
+      return sendError(res, 400, "Invalid inventory status.");
+    }
 
-    // ==========================================
-    // CHECK RESORT OWNERSHIP
-    // ==========================================
+    if (typeof notes !== "string") {
+      return sendError(res, 400, "Notes must be a string.");
+    }
 
-    const resort = await Resort.findOne({
-      _id: resortId,
-      vendor: req.vendor._id,
+    const ownership = await getOwnedResortAndCategory({
+      vendorId,
+      resortId,
+      roomCategoryId,
     });
 
-    if (!resort) {
-      return res.status(404).json({
-        success: false,
-        message: "Resort not found or access denied.",
-      });
+    if (ownership.error) {
+      return sendError(res, 404, ownership.error);
     }
 
-
-    // ==========================================
-    // CHECK ROOM CATEGORY
-    // ==========================================
-
-    const roomCategory = await ResortRoom.findOne({
-      _id: roomCategoryId,
-      resort: resortId,
-      vendor: req.vendor._id,
-    });
-
-    if (!roomCategory) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Room category not found or does not belong to this resort.",
-      });
-    }
-
-
-    // ==========================================
-    // TOTAL ACTIVE ROOM UNITS
-    // Example: Deluxe has Room 101, 102, 103
-    // totalRooms = 3
-    // ==========================================
-
-    const totalRooms = await ResortRoomUnit.countDocuments({
+    const existing = await ResortInventory.findOne({
       resort: resortId,
       roomCategory: roomCategoryId,
-      vendor: req.vendor._id,
-      isActive: true,
-      status: {
-        $nin: ["INACTIVE"],
-      },
+      date,
     });
 
-
-    const safeBlockedRooms = Number(blockedRooms);
-    const safeMaintenanceRooms = Number(maintenanceRooms);
-
-
-    if (
-      safeBlockedRooms < 0 ||
-      safeMaintenanceRooms < 0
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Blocked and maintenance rooms cannot be negative.",
-      });
+    if (existing) {
+      return sendError(
+        res,
+        409,
+        "Inventory already exists for this room category and date. Use PUT to update it."
+      );
     }
 
+    const blockedResult = parseNonNegativeInteger(blockedValue ?? 0, "blockedRooms");
+    const maintenanceResult = parseNonNegativeInteger(maintenanceValue ?? 0, "maintenanceRooms");
 
-    // ==========================================
-    // CHECK EXISTING INVENTORY
-    // ==========================================
+    if (blockedResult.error) return sendError(res, 400, blockedResult.error);
+    if (maintenanceResult.error) return sendError(res, 400, maintenanceResult.error);
 
-    let inventory = await ResortInventory.findOne({
+    const counts = await calculateRoomCounts({ vendorId, resortId, roomCategoryId });
+
+    const blockedRooms = Math.max(counts.blockedRooms, blockedResult.value);
+    const maintenanceRooms = Math.max(counts.maintenanceRooms, maintenanceResult.value);
+
+    if (blockedRooms + maintenanceRooms > counts.totalRooms) {
+      return sendError(
+        res,
+        400,
+        "Blocked and maintenance rooms cannot exceed total rooms."
+      );
+    }
+
+    const calculated = calculateInventoryStatus({
+      availableRooms: counts.totalRooms - blockedRooms - maintenanceRooms,
+      status: requestedStatus,
+    });
+
+    const inventory = await ResortInventory.create({
+      vendor: vendorId,
       resort: resortId,
       roomCategory: roomCategoryId,
-      date: inventoryDate,
+      date,
+      totalRooms: counts.totalRooms,
+      bookedRooms: 0,
+      blockedRooms,
+      maintenanceRooms,
+      availableRooms: calculated.availableRooms,
+      status: calculated.status,
+      notes: notes.trim(),
     });
 
-
-    const alreadyBookedRooms = inventory
-      ? inventory.bookedRooms
-      : 0;
-
-
-    // ==========================================
-    // CALCULATE AVAILABLE
-    // ==========================================
-
-    const availableRooms =
-      totalRooms -
-      alreadyBookedRooms -
-      safeBlockedRooms -
-      safeMaintenanceRooms;
-
-
-    if (availableRooms < 0) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Room count cannot be less than already booked, blocked and maintenance rooms.",
-      });
-    }
-
-
-    // ==========================================
-    // UPDATE OR CREATE
-    // ==========================================
-
-    inventory = await ResortInventory.findOneAndUpdate(
-      {
-        resort: resortId,
-        roomCategory: roomCategoryId,
-        date: inventoryDate,
-      },
-      {
-        $set: {
-          vendor: req.vendor._id,
-          totalRooms,
-          availableRooms,
-          blockedRooms: safeBlockedRooms,
-          maintenanceRooms: safeMaintenanceRooms,
-          status:
-            availableRooms === 0 && status === "AVAILABLE"
-              ? "SOLD_OUT"
-              : status,
-          notes,
-        },
-      },
-      {
-        new: true,
-        upsert: true,
-        runValidators: true,
-      }
-    );
-
-
-    return res.status(200).json({
+    return res.status(201).json({
       success: true,
-      message: "Inventory saved successfully.",
+      message: "Resort inventory created successfully.",
       inventory,
     });
-
   } catch (error) {
-    console.error("Upsert Inventory Error:", error);
-
     if (error.code === 11000) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Inventory already exists for this room category and date.",
-      });
+      return sendError(res, 409, "Inventory already exists for this category and date.");
     }
 
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    console.error("createInventory error:", error);
+    return sendError(res, 500, "Failed to create resort inventory.");
   }
 };
 
+// BACKWARD COMPATIBILITY for existing POST route/controller name.
+exports.upsertInventory = exports.createInventory;
 
-// ==========================================================
-// GET INVENTORY OF ONE RESORT
-// ==========================================================
-
+// GET all inventory for a resort.
+// GET /api/resort-inventory/resort/:resortId
 exports.getResortInventory = async (req, res) => {
   try {
+    const vendorId = getVendorId(req);
+
+    if (!vendorId) {
+      return sendError(res, 401, "Vendor authentication required.");
+    }
+
     const { resortId } = req.params;
-    const { startDate, endDate, roomCategoryId } = req.query;
 
-
-    // ==========================================
-    // CHECK RESORT OWNERSHIP
-    // ==========================================
+    if (!isValidId(resortId)) {
+      return sendError(res, 400, "Invalid resortId.");
+    }
 
     const resort = await Resort.findOne({
       _id: resortId,
-      vendor: req.vendor._id,
-    });
+      vendor: vendorId,
+    }).select("_id name resortName");
 
     if (!resort) {
-      return res.status(404).json({
-        success: false,
-        message: "Resort not found or access denied.",
-      });
+      return sendError(res, 404, "Resort not found or access denied.");
     }
 
+    const { range, error } = parseDateRange(req.query.startDate, req.query.endDate);
 
-    const filter = {
-      resort: resortId,
-      vendor: req.vendor._id,
-    };
-
-
-    // ==========================================
-    // FILTER BY ROOM CATEGORY
-    // ==========================================
-
-    if (roomCategoryId) {
-      filter.roomCategory = roomCategoryId;
+    if (error) {
+      return sendError(res, 400, error);
     }
 
+    const filter = { vendor: vendorId, resort: resortId };
 
-    // ==========================================
-    // FILTER BY DATE RANGE
-    // ==========================================
+    if (Object.keys(range).length) {
+      filter.date = range;
+    }
 
-    if (startDate || endDate) {
-      filter.date = {};
-
-      if (startDate) {
-        const start = new Date(startDate);
-        start.setHours(0, 0, 0, 0);
-        filter.date.$gte = start;
+    if (req.query.roomCategoryId) {
+      if (!isValidId(req.query.roomCategoryId)) {
+        return sendError(res, 400, "Invalid roomCategoryId.");
       }
-
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        filter.date.$lte = end;
-      }
+      filter.roomCategory = req.query.roomCategoryId;
     }
-
 
     const inventory = await ResortInventory.find(filter)
-      .populate(
-        "roomCategory",
-        "name basePrice maxAdults maxChildren"
-      )
-      .sort({
-        date: 1,
-      });
+      .sort({ date: 1, roomCategory: 1 })
+      .populate("roomCategory", "name title roomType");
 
+    const inventoryWithUnits = await attachAvailableUnits(inventory, vendorId);
 
     return res.status(200).json({
       success: true,
-      total: inventory.length,
-      inventory,
+      resort,
+      total: inventoryWithUnits.length,
+      inventory: inventoryWithUnits,
     });
-
   } catch (error) {
-    console.error("Get Resort Inventory Error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    console.error("getResortInventory error:", error);
+    return sendError(res, 500, "Failed to fetch resort inventory.");
   }
 };
 
-
-// ==========================================================
-// GET INVENTORY BY ROOM CATEGORY
-// ==========================================================
-
+// GET inventory for a room category.
+// GET /api/resort-inventory/room-category/:roomCategoryId
 exports.getRoomCategoryInventory = async (req, res) => {
   try {
+    const vendorId = getVendorId(req);
+
+    if (!vendorId) {
+      return sendError(res, 401, "Vendor authentication required.");
+    }
+
     const { roomCategoryId } = req.params;
-    const { startDate, endDate } = req.query;
 
+    if (!isValidId(roomCategoryId)) {
+      return sendError(res, 400, "Invalid roomCategoryId.");
+    }
 
-    const roomCategory = await ResortRoom.findOne({
+    const category = await ResortRoom.findOne({
       _id: roomCategoryId,
-      vendor: req.vendor._id,
-    });
+      vendor: vendorId,
+    }).populate("resort", "name resortName");
 
-    if (!roomCategory) {
-      return res.status(404).json({
-        success: false,
-        message: "Room category not found or access denied.",
-      });
+    if (!category) {
+      return sendError(res, 404, "Room category not found or access denied.");
     }
 
+    const { range, error } = parseDateRange(req.query.startDate, req.query.endDate);
 
-    const filter = {
-      roomCategory: roomCategoryId,
-      vendor: req.vendor._id,
-    };
-
-
-    if (startDate || endDate) {
-      filter.date = {};
-
-      if (startDate) {
-        filter.date.$gte = new Date(startDate);
-      }
-
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        filter.date.$lte = end;
-      }
+    if (error) {
+      return sendError(res, 400, error);
     }
 
+    const filter = { vendor: vendorId, roomCategory: roomCategoryId };
+
+    if (category.resort?._id) {
+      filter.resort = category.resort._id;
+    }
+
+    if (Object.keys(range).length) {
+      filter.date = range;
+    }
 
     const inventory = await ResortInventory.find(filter)
-      .sort({ date: 1 });
+      .sort({ date: 1 })
+      .populate("roomCategory", "name title roomType");
 
+    const inventoryWithUnits = await attachAvailableUnits(inventory, vendorId);
 
     return res.status(200).json({
       success: true,
-      total: inventory.length,
+      roomCategory: category,
+      total: inventoryWithUnits.length,
+      inventory: inventoryWithUnits,
+    });
+  } catch (error) {
+    console.error("getRoomCategoryInventory error:", error);
+    return sendError(res, 500, "Failed to fetch room category inventory.");
+  }
+};
+
+// GET one inventory record.
+// GET /api/resort-inventory/:inventoryId
+exports.getInventoryById = async (req, res) => {
+  try {
+    const vendorId = getVendorId(req);
+
+    if (!vendorId) {
+      return sendError(res, 401, "Vendor authentication required.");
+    }
+
+    const { inventoryId } = req.params;
+
+    if (!isValidId(inventoryId)) {
+      return sendError(res, 400, "Invalid inventoryId.");
+    }
+
+    const inventory = await ResortInventory.findOne({
+      _id: inventoryId,
+      vendor: vendorId,
+    })
+      .populate("roomCategory", "name title roomType")
+      .populate("resort", "name resortName");
+
+    if (!inventory) {
+      return sendError(res, 404, "Inventory record not found.");
+    }
+
+    const [inventoryWithUnits] = await attachAvailableUnits([inventory], vendorId);
+
+    return res.status(200).json({
+      success: true,
+      inventory: inventoryWithUnits,
+    });
+  } catch (error) {
+    console.error("getInventoryById error:", error);
+    return sendError(res, 500, "Failed to fetch inventory record.");
+  }
+};
+
+// UPDATE inventory counts/status/notes.
+// PUT /api/resort-inventory/:inventoryId
+exports.updateInventory = async (req, res) => {
+  try {
+    const vendorId = getVendorId(req);
+
+    if (!vendorId) {
+      return sendError(res, 401, "Vendor authentication required.");
+    }
+
+    const { inventoryId } = req.params;
+
+    if (!isValidId(inventoryId)) {
+      return sendError(res, 400, "Invalid inventoryId.");
+    }
+
+    const inventory = await ResortInventory.findOne({
+      _id: inventoryId,
+      vendor: vendorId,
+    });
+
+    if (!inventory) {
+      return sendError(res, 404, "Inventory record not found.");
+    }
+
+    const {
+      blockedRooms: blockedValue,
+      maintenanceRooms: maintenanceValue,
+      status: requestedStatus,
+      notes,
+    } = req.body;
+
+    if (
+      requestedStatus !== undefined &&
+      !VALID_INVENTORY_STATUSES.includes(requestedStatus)
+    ) {
+      return sendError(res, 400, "Invalid inventory status.");
+    }
+
+    if (notes !== undefined && typeof notes !== "string") {
+      return sendError(res, 400, "Notes must be a string.");
+    }
+
+    const counts = await calculateRoomCounts({
+      vendorId,
+      resortId: inventory.resort,
+      roomCategoryId: inventory.roomCategory,
+    });
+
+    const blockedResult =
+      blockedValue === undefined
+        ? { value: inventory.blockedRooms }
+        : parseNonNegativeInteger(blockedValue, "blockedRooms");
+
+    const maintenanceResult =
+      maintenanceValue === undefined
+        ? { value: inventory.maintenanceRooms }
+        : parseNonNegativeInteger(maintenanceValue, "maintenanceRooms");
+
+    if (blockedResult.error) return sendError(res, 400, blockedResult.error);
+    if (maintenanceResult.error) return sendError(res, 400, maintenanceResult.error);
+
+    // Room Units me jo BLOCKED / MAINTENANCE hain, wo hamesha ginti me aate hain
+    const blockedFinal = Math.max(counts.blockedRooms, blockedResult.value);
+    const maintenanceFinal = Math.max(counts.maintenanceRooms, maintenanceResult.value);
+
+    if (counts.totalRooms < inventory.bookedRooms + blockedFinal + maintenanceFinal) {
+      return sendError(
+        res,
+        400,
+        "Total physical rooms cannot be less than booked + blocked + maintenance rooms."
+      );
+    }
+
+    const calculated = calculateInventoryStatus({
+      availableRooms:
+        counts.totalRooms - inventory.bookedRooms - blockedFinal - maintenanceFinal,
+      status: requestedStatus || inventory.status,
+    });
+
+    inventory.totalRooms = counts.totalRooms;
+    inventory.blockedRooms = blockedFinal;
+    inventory.maintenanceRooms = maintenanceFinal;
+    inventory.availableRooms = calculated.availableRooms;
+    inventory.status = calculated.status;
+
+    if (notes !== undefined) {
+      inventory.notes = notes.trim();
+    }
+
+    await inventory.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Resort inventory updated successfully.",
       inventory,
     });
-
   } catch (error) {
-    console.error(
-      "Get Room Category Inventory Error:",
-      error
-    );
+    console.error("updateInventory error:", error);
+    return sendError(res, 500, "Failed to update resort inventory.");
+  }
+};
 
-    return res.status(500).json({
-      success: false,
-      message: error.message,
+// DELETE inventory record.
+// DELETE /api/resort-inventory/:inventoryId
+exports.deleteInventory = async (req, res) => {
+  try {
+    const vendorId = getVendorId(req);
+
+    if (!vendorId) {
+      return sendError(res, 401, "Vendor authentication required.");
+    }
+
+    const { inventoryId } = req.params;
+
+    if (!isValidId(inventoryId)) {
+      return sendError(res, 400, "Invalid inventoryId.");
+    }
+
+    const inventory = await ResortInventory.findOne({
+      _id: inventoryId,
+      vendor: vendorId,
     });
+
+    if (!inventory) {
+      return sendError(res, 404, "Inventory record not found.");
+    }
+
+    if (inventory.bookedRooms > 0) {
+      return sendError(res, 409, "Cannot delete inventory that has booked rooms.");
+    }
+
+    await ResortInventory.deleteOne({ _id: inventoryId, vendor: vendorId });
+
+    return res.status(200).json({
+      success: true,
+      message: "Resort inventory deleted successfully.",
+    });
+  } catch (error) {
+    console.error("deleteInventory error:", error);
+    return sendError(res, 500, "Failed to delete resort inventory.");
   }
 };
